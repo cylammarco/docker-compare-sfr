@@ -43,3 +43,6 @@ docker rm compare-sfr-container
 ```
 docker rmi compare-sfr-image
 ```
+
+# Note
+In prospecter, `prospect.io.write_results.writer.write_hdf5` does not have the option to overwrite an existing file, if the output name is already in use, it will create a new file with the timestamp appended. This effect will cause the example script to fail when running a second time without removing the `.h5` files generated earlier.

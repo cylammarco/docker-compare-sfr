@@ -7,7 +7,7 @@ RUN echo "Acquire::Check-Valid-Until \"false\";\nAcquire::Check-Date \"false\";"
 # Basic software installation
 RUN apt-get update
 RUN apt-get install -y wget nano python3.8 python3-pip git
-RUN pip3 install scipy~=1.7 numpy~=1.21 matplotlib~=3.4 dynesty~=1.1 emcee~=3.1 astro-sedpy~=0.2 fsps~=0.4
+RUN pip3 install scipy~=1.7 numpy~=1.21 matplotlib~=3.4 dynesty~=1.1 emcee~=3.1 astro-sedpy~=0.2 fsps~=0.4 corner~=2.2
 
 # Compile TLUSTY and SYNSPEC
 WORKDIR /home/sfr/git

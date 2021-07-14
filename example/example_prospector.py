@@ -536,7 +536,7 @@ run_params["nburn"] = [16, 32, 64]
 output = fit_model(obs, model, sps, lnprobfn=lnprobfn, **run_params)
 print('done emcee in {0}s'.format(output["sampling"][1]))
 
-hfile = "prospector/demo_emcee_mcmc.h5"
+hfile = "../../prospector/demo_emcee_mcmc.h5"
 writer.write_hdf5(hfile,
                   run_params,
                   model,
@@ -561,7 +561,7 @@ run_params["nested_maxcall"] = int(1e7)
 output = fit_model(obs, model, sps, lnprobfn=lnprobfn, **run_params)
 print('done dynesty in {0}s'.format(output["sampling"][1]))
 
-hfile = "prospector/demo_dynesty_mcmc.h5"
+hfile = "../../prospector/demo_dynesty_mcmc.h5"
 writer.write_hdf5(hfile,
                   run_params,
                   model,
@@ -576,7 +576,7 @@ print('Finished')
 results_type = "emcee"  # | "dynesty"
 # grab results (dictionary), the obs dictionary, and our corresponding models
 # When using parameter files set `dangerous=True`
-result, obs, _ = reader.results_from("prospector/demo_{}_mcmc.h5".format(results_type),
+result, obs, _ = reader.results_from("../../prospector/demo_{}_mcmc.h5".format(results_type),
                                      dangerous=False)
 
 # let's look at what's stored in the `result` dictionary
