@@ -2,7 +2,7 @@ import os
 
 import numpy as np
 import matplotlib.pyplot as plt
-from pyFIT3D.common.auto_ssp_tools import auto_ssp_elines_rnd
+from pyFIT3D.common.auto_ssp_tools import auto_ssp_elines_rnd_rss
 from pyFIT3D.common.io import get_data_from_fits
 from pyFIT3D.common.io import get_wave_from_header
 from pyFIT3D.common.constants import __c__
@@ -11,7 +11,7 @@ from pyFIT3D.common.stats import pdl_stats, _STATS_POS
 from pyFIT3D.common.gas_tools import fit_elines
 from pyFIT3D.common.gas_tools import read_fit_elines_output
 
-os.chdir('pipe3d/')
+os.chdir('/home/sfr/pipe3d/')
 data_path = '../example/pipe3d_example_data/'
 
 #########################################################################
@@ -88,7 +88,7 @@ config_file = data_path+'auto_ssp_V500_several_Hb.config'
 out_file = f'auto_ssp.{name}.cen.out'
 
 # run auto_ssp_elines_rnd_sigma_inst
-auto_ssp_elines_rnd(spec_file=spec_file,
+auto_ssp_elines_rnd_rss(spec_file=spec_file,
                     ssp_file=ssp_file,
                     ssp_nl_fit_file=ssp_nl_fit_file,
                     sigma_inst=sigma_inst,
