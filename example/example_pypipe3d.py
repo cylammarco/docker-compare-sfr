@@ -25,7 +25,7 @@ data_path = '../example/pipe3d_example_data/'
 #
 
 name = 'NGC5947'
-spec_file = data_path+f'{name}.spec_5.txt'
+spec_file = data_path + f'{name}.spec_5.txt'
 
 # using the initial values:
 #
@@ -34,7 +34,7 @@ sigma_inst = 2.6
 
 # Masks:
 #     File with list of ranges of wavelength to be masked in whole analysis
-mask_list = data_path+'mask_elines.txt'
+mask_list = data_path + 'mask_elines.txt'
 
 ######################
 ######################
@@ -47,10 +47,10 @@ nl_w_min_max = [3800, 4700]
 
 #     models:
 #         GSD01 3 models
-ssp_nl_fit_file = data_path+'gsd01_3.fits'
+ssp_nl_fit_file = data_path + 'gsd01_3.fits'
 
 #     emission lines to be masked:
-elines_mask_file = data_path+'emission_lines.txt'
+elines_mask_file = data_path + 'emission_lines.txt'
 
 #     redshift:
 #         initial value: 0.0195
@@ -79,42 +79,42 @@ AV_set = [0.1, 0.05, 0, 2]
 #
 #     models:
 #         GSD01 156 models
-ssp_file = data_path+'gsd01_156.fits'
+ssp_file = data_path + 'gsd01_156.fits'
 
 #     configuration file:
-config_file = data_path+'auto_ssp_V500_several_Hb.config'
+config_file = data_path + 'auto_ssp_V500_several_Hb.config'
 
 # final output file:
 out_file = f'auto_ssp.{name}.cen.out'
 
 # run auto_ssp_elines_rnd_sigma_inst
 auto_ssp_elines_rnd_rss(spec_file=spec_file,
-                    ssp_file=ssp_file,
-                    ssp_nl_fit_file=ssp_nl_fit_file,
-                    sigma_inst=sigma_inst,
-                    out_file=out_file,
-                    config_file=config_file,
-                    mask_list=mask_list,
-                    elines_mask_file=elines_mask_file,
-                    min=-3,
-                    max=50,
-                    w_min=w_min_max[0],
-                    w_max=w_min_max[1],
-                    nl_w_min=nl_w_min_max[0],
-                    nl_w_max=nl_w_min_max[0],
-                    input_redshift=redshift_set[0],
-                    delta_redshift=redshift_set[1],
-                    min_redshift=redshift_set[2],
-                    max_redshift=redshift_set[3],
-                    input_sigma=sigma_set[0],
-                    delta_sigma=sigma_set[1],
-                    min_sigma=sigma_set[2],
-                    max_sigma=sigma_set[3],
-                    input_AV=AV_set[0],
-                    delta_AV=AV_set[1],
-                    min_AV=AV_set[2],
-                    max_AV=AV_set[3],
-                    plot=0)
+                        ssp_file=ssp_file,
+                        ssp_nl_fit_file=ssp_nl_fit_file,
+                        sigma_inst=sigma_inst,
+                        out_file=out_file,
+                        config_file=config_file,
+                        mask_list=mask_list,
+                        elines_mask_file=elines_mask_file,
+                        min=-3,
+                        max=50,
+                        w_min=w_min_max[0],
+                        w_max=w_min_max[1],
+                        nl_w_min=nl_w_min_max[0],
+                        nl_w_max=nl_w_min_max[0],
+                        input_redshift=redshift_set[0],
+                        delta_redshift=redshift_set[1],
+                        min_redshift=redshift_set[2],
+                        max_redshift=redshift_set[3],
+                        input_sigma=sigma_set[0],
+                        delta_sigma=sigma_set[1],
+                        min_sigma=sigma_set[2],
+                        max_sigma=sigma_set[3],
+                        input_AV=AV_set[0],
+                        delta_AV=AV_set[1],
+                        min_AV=AV_set[2],
+                        max_AV=AV_set[3],
+                        plot=0)
 
 data__tw, h = get_data_from_fits(f'output.{out_file}.fits', header=True)
 
@@ -173,7 +173,7 @@ output_spectra(system_wave__w, [system_flux__w, system_eflux__w],
 
 # models: Ha + [NII]6583 + [NII]6548 + continuum
 #     config file with models to fit:
-config_filename = data_path+'Ha_NII.config'
+config_filename = data_path + 'Ha_NII.config'
 name = 'NGC5947'
 # output filename
 output_filename = f'fit_elines_rnd_NII_Ha.{name}.out'
@@ -228,7 +228,6 @@ print(f"\t        velocity: {v0[i_NII_red]:.4f} +/- {e_v0[i_NII_red]:.4f}")
 print(f"\t      dispersion: {disp[i_NII_red]:.4f} +/- {e_disp[i_NII_red]:.4f}")
 print('continuum:')
 print(f"\t integrated flux: {cont[0]:.4f} +/- {e_cont[0]:.4f}")
-
 '''
 # Perform the fit again with Levemberg-Marquadt minimization technique
 # using the rnd output values as input values for the models.
@@ -288,7 +287,7 @@ print(f"\t integrated flux: {cont[0]:.4f} +/- {e_cont[0]:.4f}")
 # could be mimic by using the mode 'both':
 # models: Ha + [NII]6583 + [NII]6548 + continuum
 #     config file with models to fit:
-config_filename = data_path+'Ha_NII.config'
+config_filename = data_path + 'Ha_NII.config'
 
 # output filename
 output_filename = f'fit_elines_mixed_NII_Ha.{name}.out'

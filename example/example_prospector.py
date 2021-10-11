@@ -28,7 +28,7 @@ rcParams.update({'xtick.color': 'k'})
 rcParams.update({'ytick.color': 'k'})
 rcParams.update({'font.size': 20})
 
-os.chdir('example/prospector_example_data')
+os.chdir('/home/sfr/example/prospector_example_data')
 
 # This is almost entirely copy-and-pasted from
 # https://github.com/bd-j/prospector/blob/main/demo/InteractiveDemo.ipynb
@@ -576,8 +576,8 @@ print('Finished')
 results_type = "emcee"  # | "dynesty"
 # grab results (dictionary), the obs dictionary, and our corresponding models
 # When using parameter files set `dangerous=True`
-result, obs, _ = reader.results_from("../../prospector/demo_{}_mcmc.h5".format(results_type),
-                                     dangerous=False)
+result, obs, _ = reader.results_from(
+    "../../prospector/demo_{}_mcmc.h5".format(results_type), dangerous=False)
 
 # let's look at what's stored in the `result` dictionary
 print(result.keys())
@@ -688,4 +688,5 @@ plt.xlim([xmin, xmax])
 plt.ylim([ymin, ymax])
 plt.legend(loc='best', fontsize=20)
 plt.tight_layout()
-plt.savefig('../../prospector/fig_6_regenerated_sed_from_stored_mcmc_chains.jpg')
+plt.savefig(
+    '../../prospector/fig_6_regenerated_sed_from_stored_mcmc_chains.jpg')

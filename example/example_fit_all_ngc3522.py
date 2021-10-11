@@ -9,20 +9,21 @@ from prospect.fitting import fit_model
 from prospect.io import write_results as writer
 from prospect.io import read_results as reader
 from prospect.models import priors
-from prospect.models.sedmodel import SedModel
 from prospect.models.templates import TemplateLibrary
-from prospect.sources import CSPSpecBasis
 from prospect.utils.obsutils import fix_obs
 
-ngc = fits.open('/home/sfr/example/ppxf_example_data/NGC4636_SDSS_DR12.fits')
+ngc = fits.open('/home/sfr/example/ppxf_example_data/NGC3522_SDSS_DR8.fits')
 # log10(wavelength [Å])
-wave = 10.**(ngc[1].data['loglam'])
+wave = ngc[1].data['wavelength']
+
 # coadded calibrated flux [10-17 ergs/s/cm2/Å]
 # divide by 3631. to turn the unit into maggies
 flux = ngc[1].data['flux'] * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
 # inverse variance of flux
-err = np.sqrt(
-    1. / ngc[1].data['ivar']) * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
+err = np.sqrt(1. / ngc[1].data['inverse_variance']
+              ) * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
+
+z = 0.004153  # SDSS redshift estimate
 
 # prospector
 # prospector
@@ -79,93 +80,69 @@ plt.xlabel('Wavelength [A]')
 plt.ylabel('Flux Density [maggies]')
 plt.legend(loc='best', fontsize=20)
 plt.tight_layout()
-plt.savefig('/home/sfr/prospector/ngc4636_prospector_input.png')
-
-mass_param = {
-    "name": "mass",
-    # The mass parameter here is a scalar, so it has N=1
-    "N": 1,
-    # We will be fitting for the mass, so it is a free parameter
-    "isfree": True,
-    # This is the initial value. For fixed parameters this is the
-    # value that will always be used.
-    "init": 1e8,
-    # This sets the prior probability for the parameter
-    "prior": priors.LogUniform(mini=1e7, maxi=1e9),
-    # this sets the initial dispersion to use when generating
-    # clouds of emcee "walkers".  It is not required, but can be very helpful.
-    "init_disp": 1e6,
-    # this sets the minimum dispersion to use when generating
-    # clouds of emcee "walkers".  It is not required, but can be useful if
-    # burn-in rounds leave the walker distribution too narrow for some reason.
-    "disp_floor": 1e6,
-    # This is not required, but can be helpful
-    "units": "solar masses formed",
-}
+plt.savefig('/home/sfr/prospector/ngc3522_prospector_input.png')
 
 # Look at all the prepackaged parameter sets
 TemplateLibrary.show_contents()
-TemplateLibrary.describe("parametric_sfh")
+TemplateLibrary.describe("alpha")
 
-model_params = TemplateLibrary["parametric_sfh"]
 
-# Now add the lumdist parameter by hand as another entry in the dictionary.
-# This will control the distance since we are setting the redshift to zero.
-# In `build_obs` above we used a distance of 10Mpc to convert from absolute
-# to apparent magnitudes, so we use that here too, since the `maggies` are
-# appropriate for that distance.
-model_params["lumdist"] = {
-    "N": 1,
-    "isfree": False,
-    "init": 10.,
-    "units": "Mpc"
-}
+def build_model(**extras):
+    """Build a prospect.models.SedModel object
+    :returns model:
+        An instance of prospect.models.SedModel
+    """
+    from prospect.models.sedmodel import SedModel
+    from prospect.models.templates import TemplateLibrary
+    # Get (a copy of) one of the prepackaged model set dictionaries.
+    # This is, somewhat confusingly, a dictionary of dictionaries, keyed by
+    # parameter name
+    model_params = TemplateLibrary["alpha"]
+    # https://github.com/bd-j/prospector/blob/main/prospect/models/templates.py#L579
+    # Now instantiate the model object using this dictionary of parameter
+    # specifications
+    model = SedModel(model_params, **extras)
+    print('SED model built.')
+    return model
 
-# Let's make some changes to initial values appropriate for our objects
-# and data
-model_params["zred"]["init"] = 0.0
-model_params["dust2"]["init"] = 0.05
-model_params["logzsol"]["init"] = -0.5
-model_params["tage"]["init"] = 13.
-model_params["mass"]["init"] = 1e8
 
-# These are dwarf galaxies, so lets also adjust the metallicity prior,
-# the tau parameter upward, and the mass prior downward
-model_params["dust2"]["prior"] = priors.TopHat(mini=0.0, maxi=2.0)
-model_params["tau"]["prior"] = priors.LogUniform(mini=1e-1, maxi=1e2)
-model_params["mass"]["prior"] = priors.LogUniform(mini=1e6, maxi=1e10)
+def build_sps(zcontinuous=1, **extras):
+    """
+    :param zcontinuous:
+        A vlue of 1 insures that we use interpolation between SSPs to
+        have a continuous metallicity parameter (`logzsol`)
+        See python-FSPS documentation for details
+    """
+    from prospect.sources import FastStepBasis
+    sps = FastStepBasis(zcontinuous=zcontinuous, **extras)
+    return sps
 
-# If we are going to be using emcee, it is useful to provide a
-# minimum scale for the cloud of walkers (the default is 0.1)
-model_params["mass"]["disp_floor"] = 1e6
-model_params["tau"]["disp_floor"] = 1.0
-model_params["tage"]["disp_floor"] = 1.0
 
-# Set metallicity as a free parameter
-model_params["logzsol"]["isfree"] = True
-# And use value supplied by fixed_metallicity keyword
-#model_params["logzsol"]['init'] = fixed_metallicity
+model_params = {}
 
-model_params["zred"]['isfree'] = False
-# And set the value to the object_redshift keyword
-model_params["zred"]['init'] = 0.003129
+run_params = {}
+run_params["zred"] = z
+run_params["dynesty"] = False
+run_params["emcee"] = True
+run_params["optimize"] = True
+run_params["min_method"] = 'powell'
 
-# Add dust emission (with fixed dust SED parameters)
-# Since `model_params` is a dictionary of parameter specifications, and
-# `TemplateLibrary` returns dictionaries of parameter specifications,
-# we can just update `model_params` with the parameters described in
-# the pre-packaged `dust_emission` parameter set.
-model_params.update(TemplateLibrary["dust_emission"])
+# We'll start minimization from "nmin" separate places,
+# the first based on the current values of each parameter and the
+# rest drawn from the prior.  Starting from these extra draws
+# can guard against local minima, or problems caused by
+# starting at the edge of a prior (e.g. dust2=0.0)
+run_params["nmin"] = 256
+# Number of emcee walkers
+run_params["nwalkers"] = 100
+# Number of iterations of the MCMC sampling
+run_params["niter"] = 1024
 
-# Now instantiate the model object using this dictionary of parameter
-# specifications
-model = SedModel(model_params)
+sps = build_sps(**model_params)
+model = build_model(**run_params)
 
-print(model)
 print("\nInitial free parameter vector theta:\n  {}\n".format(model.theta))
 print("Initial parameter dictionary:\n{}".format(model.params))
-
-sps = CSPSpecBasis(zcontinuous=1)
 
 # Generate the model SED at the initial value of theta
 theta = model.theta.copy()
@@ -181,34 +158,44 @@ wspec *= a  # redshift them
 print(sps.ssp.libraries)
 
 # --- start minimization ----
-run_params = {}
-run_params["dynesty"] = False
-run_params["emcee"] = False
-run_params["optimize"] = True
-run_params["min_method"] = 'lm'
-# We'll start minimization from "nmin" separate places,
-# the first based on the current values of each parameter and the
-# rest drawn from the prior.  Starting from these extra draws
-# can guard against local minima, or problems caused by
-# starting at the edge of a prior (e.g. dust2=0.0)
-run_params["nmin"] = 10
 
 os.chdir('/home/sfr/prospector')
 output = fit_model(obs, model, sps, lnprobfn=lnprobfn, **run_params)
 
-print("Done optmization in {}s".format(output["optimization"][1]))
+result = output['sampling'][0]
 
-print(model.theta)
-(results, topt) = output["optimization"]
-# Find which of the minimizations gave the best result,
-# and use the parameter vector for that minimization
-ind_best = np.argmin([r.cost for r in results])
-print(ind_best)
-theta_best = results[ind_best].x.copy()
-print(theta_best)
+nwalkers, niter = run_params['nwalkers'], run_params['niter']
+theta = []
+for i in range(nwalkers):
+    theta.append(result.chain[i, -1])
+
+theta_mean = np.mean(theta, axis=0)
+
+theta_logzsol = theta_mean[0]
+theta_dust2 = theta_mean[1]
+theta_fraction_1 = theta_mean[2]
+theta_fraction_2 = theta_mean[3]
+theta_fraction_3 = theta_mean[4]
+theta_fraction_4 = theta_mean[5]
+theta_fraction_5 = theta_mean[6]
+theta_total_mass = theta_mean[7]
+theta_duste_umin = theta_mean[8]
+theta_duste_qpah = theta_mean[9]
+theta_gamma = theta_mean[10]
+theta_fagn = theta_mean[11]
+theta_agn_tau = theta_mean[12]
+theta_dust_ratio = theta_mean[13]
+theta_dust_index = theta_mean[14]
+
+z_fraction = np.array((theta_fraction_1, theta_fraction_2, theta_fraction_3,
+                       theta_fraction_4, theta_fraction_5))
+
+sfr = transforms.zfrac_to_sfr(total_mass=theta_total_mass,
+                              z_fraction=z_fraction,
+                              agebins=model.__dict__['params']['agebins'])
 
 # generate model
-prediction = model.mean_model(theta_best, obs=obs, sps=sps)
+prediction = model.mean_model(theta_mean, obs, sps=sps)
 pspec, pphot, pfrac = prediction
 
 plt.figure(figsize=(16, 8))
@@ -231,23 +218,43 @@ plt.xlabel('Wavelength [A]')
 plt.ylabel('Flux Density [maggies]')
 plt.legend(loc='best', fontsize=20)
 plt.tight_layout()
-plt.savefig('/home/sfr/prospector/ngc4636_prospector_fitted_model.jpg')
 
-hfile = "/home/sfr/prospector/ngc4636_mcmc.h5"
-writer.write_hdf5(hfile,
-                  run_params,
-                  model,
-                  obs,
-                  output["sampling"][0],
-                  output["optimization"][0],
-                  tsample=output["sampling"][1],
-                  toptimize=output["optimization"][1],
-                  sps=sps)
+if os.path.exists('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg')
+
+plt.savefig('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg')
+
+hfile = "/home/sfr/prospector/ngc3522_mcmc.h5"
+if os.path.exists(hfile):
+    os.remove(hfile)
+
+# Does not seem to be writing model, output and sps.
+writer.write_hdf5(
+    hfile,
+    run_params,
+    model,
+    obs,
+    sampler=result,
+    #                  optimize_result_list=output["optimization"][0],
+    tsample=output["sampling"][1],
+    toptimize=output["optimization"][1],
+    sps=sps)
 
 # grab results (dictionary), the obs dictionary, and our corresponding models
 # When using parameter files set `dangerous=True`
-res, obs, _ = reader.results_from("/home/sfr/prospector/ngc4636_mcmc.h5")
+res, o, m = reader.results_from("/home/sfr/prospector/ngc3522_mcmc.h5",
+                                model=model)
 
+cornerfig = reader.subcorner(res,
+                             start=0,
+                             thin=15,
+                             truths=theta_mean,
+                             fig=plt.subplots(15, 15, figsize=(27, 27))[0])
+
+if os.path.exists('/home/sfr/prospector/ngc3522_mcmc_corner.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_mcmc_corner.jpg')
+
+plt.savefig('/home/sfr/prospector/ngc3522_mcmc_corner.jpg')
 
 # ppxf
 # ppxf
@@ -283,15 +290,14 @@ ppxf_dir = path.dirname(path.realpath(ppxf_package.__file__))
 # The spectrum is *already* log rebinned by the SDSS DR8
 # pipeline and log_rebin should not be used in this case.
 #
-t = ngc['COADD'].data
-z = 0.003129  # SDSS redshift estimate
+t = ngc[1].data
 
 # Only use the wavelength range in common between galaxy and stellar library.
 #
-mask = (t['loglam'] > np.log10(3540)) & (t['loglam'] < np.log10(7409))
+mask = (t['wavelength'] > 3540.) & (t['wavelength'] < 7400.)
 flux = t['flux'][mask]
 galaxy = flux / np.median(flux)  # Normalize spectrum to avoid numerical issues
-wave = 10.**t['loglam'][mask]
+wave = t['wavelength'][mask]
 
 # The SDSS wavelengths are in vacuum, while the MILES ones are in air.
 # For a rigorous treatment, the SDSS vacuum wavelengths should be
@@ -336,21 +342,11 @@ regul_err = 0.013  # Desired regularization error
 # Estimate the wavelength fitted range in the rest frame.
 lam_range_gal = np.array([np.min(wave), np.max(wave)]) / (1 + z)
 
-# Construct a set of Gaussian emission line templates.
-# The `emission_lines` function defines the most common lines, but additional
-# lines can be included by editing the function in the file ppxf_util.py.
-gas_templates, gas_names, line_wave = util.emission_lines(
-    miles.log_lam_temp,
-    lam_range_gal,
-    FWHM_gal,
-    tie_balmer=tie_balmer,
-    limit_doublets=limit_doublets)
-
 # Combines the stellar and gaseous templates into a single array.
 # During the PPXF fit they will be assigned a different kinematic
 # COMPONENT value
 #
-templates = np.column_stack([stars_templates, gas_templates])
+templates = stars_templates
 
 #-----------------------------------------------------------
 
@@ -370,21 +366,14 @@ vel = c * np.log(1 + z)  # eq.(8) of Cappellari (2017)
 start = [vel, 180.]  # (km/s), starting guess for [V, sigma]
 
 n_temps = stars_templates.shape[1]
-n_forbidden = np.sum(["[" in a
-                      for a in gas_names])  # forbidden lines contain "[*]"
-n_balmer = len(gas_names) - n_forbidden
 
 # Assign component=0 to the stellar templates, component=1 to the Balmer
 # gas emission lines templates and component=2 to the forbidden lines.
-component = [0] * n_temps + [1] * n_balmer + [2] * n_forbidden
-gas_component = np.array(component) > 0  # gas_component=True for gas templates
+component = [0] * n_temps
 
 # Fit (V, sig, h3, h4) moments=4 for the stars
 # and (V, sig) moments=2 for the two gas kinematic components
-moments = [4, 2, 2]
-
-# Adopt the same starting value for the stars and the two gas components
-start = [start, start, start]
+moments = 4
 
 # If the Balmer lines are tied one should allow for gas reddeining.
 # The gas_reddening can be different from the stellar one, if both are fitted.
@@ -407,17 +396,14 @@ pp = ppxf(templates,
           start,
           plot=False,
           moments=moments,
-          degree=-1,
-          mdegree=10,
+          degree=4,
+          mdegree=0,
+          clean=True,
           vsyst=dv,
           lam=wave,
-          clean=False,
           regul=1. / regul_err,
           reg_dim=reg_dim,
-          component=component,
-          gas_component=gas_component,
-          gas_names=gas_names,
-          gas_reddening=gas_reddening)
+          component=component)
 
 # When the two Delta Chi^2 below are the same, the solution
 # is the smoothest consistent with the observed spectrum.
@@ -425,8 +411,16 @@ pp = ppxf(templates,
 print('Desired Delta Chi^2: %#.4g' % np.sqrt(2 * galaxy.size))
 print('Current Delta Chi^2: %#.4g' % ((pp.chi2 - 1) * galaxy.size))
 
-weights = pp.weights[~gas_component]  # Exclude weights of the gas templates
+weights = pp.weights  # Exclude weights of the gas templates
 weights = weights.reshape(reg_dim) / weights.sum()  # Normalized
+sfr = np.sum(weights, axis=1)
+age = miles.age_grid[:, 0]
+plt.figure(figsize=(10, 6))
+plt.plot(age, sfr)
+plt.xlabel('Lookback Time / Gyr')
+plt.ylabel('Relative Star Formation Rate')
+plt.tight_layout()
+plt.savefig('/home/sfr/ppxf/ngc3522_ppxf_sfr.png')
 
 miles.mean_age_metal(weights)
 miles.mass_to_light(weights, band="r")
@@ -435,25 +429,13 @@ miles.mass_to_light(weights, band="r")
 plt.figure(figsize=(16, 8))
 pp.plot()
 plt.tight_layout()
-plt.savefig('/home/sfr/ppxf/ngc4636_ppxf_fitted_model.png')
+plt.savefig('/home/sfr/ppxf/ngc3522_ppxf_fitted_model.png')
 
 # Plot stellar population mass-fraction distribution
 plt.figure(figsize=(16, 8))
 miles.plot(weights)
 plt.tight_layout()
-plt.savefig('/home/sfr/ppxf/ngc4636_ppxf_age_metallicity.png')
-
-
-
-
-
-
-
-
-
-
-
-
+plt.savefig('/home/sfr/ppxf/ngc3522_ppxf_age_metallicity.png')
 
 # pyPipe3D
 # pyPipe3D
