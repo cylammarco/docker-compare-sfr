@@ -1,6 +1,7 @@
 import os
 
 from astropy.io import fits
+from astropy.stats import sigma_clip
 from matplotlib import pyplot as plt
 import numpy as np
 
@@ -87,7 +88,7 @@ TemplateLibrary.show_contents()
 TemplateLibrary.describe("alpha")
 
 
-def build_model(**extras):
+def build_model(template_name, **extras):
     """Build a prospect.models.SedModel object
     :returns model:
         An instance of prospect.models.SedModel
@@ -97,7 +98,7 @@ def build_model(**extras):
     # Get (a copy of) one of the prepackaged model set dictionaries.
     # This is, somewhat confusingly, a dictionary of dictionaries, keyed by
     # parameter name
-    model_params = TemplateLibrary["alpha"]
+    model_params = TemplateLibrary[template_name]
     # https://github.com/bd-j/prospector/blob/main/prospect/models/templates.py#L579
     # Now instantiate the model object using this dictionary of parameter
     # specifications
@@ -106,15 +107,19 @@ def build_model(**extras):
     return model
 
 
-def build_sps(zcontinuous=1, **extras):
+def build_sps(parametric=True, zcontinuous=1, **extras):
     """
     :param zcontinuous:
         A vlue of 1 insures that we use interpolation between SSPs to
         have a continuous metallicity parameter (`logzsol`)
         See python-FSPS documentation for details
     """
-    from prospect.sources import FastStepBasis
-    sps = FastStepBasis(zcontinuous=zcontinuous, **extras)
+    if parametric:
+        from prospect.sources import FastSSPBasis
+        sps = FastSSPBasis(**extras)
+    else:
+        from prospect.sources import FastStepBasis
+        sps = FastStepBasis(zcontinuous=zcontinuous, **extras)
     return sps
 
 
@@ -132,25 +137,30 @@ run_params["min_method"] = 'powell'
 # rest drawn from the prior.  Starting from these extra draws
 # can guard against local minima, or problems caused by
 # starting at the edge of a prior (e.g. dust2=0.0)
-run_params["nmin"] = 256
+run_params["nmin"] = 32
 # Number of emcee walkers
-run_params["nwalkers"] = 100
+run_params["nwalkers"] = 32
 # Number of iterations of the MCMC sampling
-run_params["niter"] = 1024
+run_params["niter"] = 4096
+run_params["nburn"] = [int(run_params["niter"] * 0.05), int(run_params["niter"] * 0.1)]
 
-sps = build_sps(**model_params)
-model = build_model(**run_params)
+sps = build_sps(zcontinuous=1, **model_params)
+model_parametric_sfh = build_model(template_name='parametric_sfh',
+                                   **run_params)
 
-print("\nInitial free parameter vector theta:\n  {}\n".format(model.theta))
-print("Initial parameter dictionary:\n{}".format(model.params))
+print("\nInitial free parameter vector theta:\n  {}\n".format(
+    model_parametric_sfh.theta))
+print("Initial parameter dictionary:\n{}".format(model_parametric_sfh.params))
 
 # Generate the model SED at the initial value of theta
-theta = model.theta.copy()
-initial_spec, initial_phot, initial_mfrac = model.sed(theta, obs=obs, sps=sps)
-title_text = ','.join(
-    ["{}={}".format(p, model.params[p][0]) for p in model.free_params])
+theta = model_parametric_sfh.theta.copy()
+title_text = ','.join([
+    "{}={}".format(p, model_parametric_sfh.params[p][0])
+    for p in model_parametric_sfh.free_params
+])
 
-a = 1.0 + model.params.get('zred', 0.0)  # cosmological redshifting
+a = 1.0 + model_parametric_sfh.params.get('zred',
+                                          0.0)  # cosmological redshifting
 
 wspec = sps.wavelengths
 wspec *= a  # redshift them
@@ -160,7 +170,11 @@ print(sps.ssp.libraries)
 # --- start minimization ----
 
 os.chdir('/home/sfr/prospector')
-output = fit_model(obs, model, sps, lnprobfn=lnprobfn, **run_params)
+output = fit_model(obs,
+                   model_parametric_sfh,
+                   sps,
+                   lnprobfn=lnprobfn,
+                   **run_params)
 
 result = output['sampling'][0]
 
@@ -169,33 +183,11 @@ theta = []
 for i in range(nwalkers):
     theta.append(result.chain[i, -1])
 
-theta_mean = np.mean(theta, axis=0)
 
-theta_logzsol = theta_mean[0]
-theta_dust2 = theta_mean[1]
-theta_fraction_1 = theta_mean[2]
-theta_fraction_2 = theta_mean[3]
-theta_fraction_3 = theta_mean[4]
-theta_fraction_4 = theta_mean[5]
-theta_fraction_5 = theta_mean[6]
-theta_total_mass = theta_mean[7]
-theta_duste_umin = theta_mean[8]
-theta_duste_qpah = theta_mean[9]
-theta_gamma = theta_mean[10]
-theta_fagn = theta_mean[11]
-theta_agn_tau = theta_mean[12]
-theta_dust_ratio = theta_mean[13]
-theta_dust_index = theta_mean[14]
-
-z_fraction = np.array((theta_fraction_1, theta_fraction_2, theta_fraction_3,
-                       theta_fraction_4, theta_fraction_5))
-
-sfr = transforms.zfrac_to_sfr(total_mass=theta_total_mass,
-                              z_fraction=z_fraction,
-                              agebins=model.__dict__['params']['agebins'])
+theta_mean = np.mean(sigma_clip(theta, axis=0), axis=0)
 
 # generate model
-prediction = model.mean_model(theta_mean, obs, sps=sps)
+prediction = model_parametric_sfh.mean_model(theta_mean, obs, sps=sps)
 pspec, pphot, pfrac = prediction
 
 plt.figure(figsize=(16, 8))
@@ -219,12 +211,17 @@ plt.ylabel('Flux Density [maggies]')
 plt.legend(loc='best', fontsize=20)
 plt.tight_layout()
 
-if os.path.exists('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg'):
-    os.remove('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg')
+if os.path.exists(
+        '/home/sfr/prospector/ngc3522_prospector_fitted_parametric_sfh_model.jpg'
+):
+    os.remove(
+        '/home/sfr/prospector/ngc3522_prospector_fitted_parametric_sfh_model.jpg'
+    )
 
-plt.savefig('/home/sfr/prospector/ngc3522_prospector_fitted_model.jpg')
+plt.savefig(
+    '/home/sfr/prospector/ngc3522_prospector_fitted_parametric_sfh_model.jpg')
 
-hfile = "/home/sfr/prospector/ngc3522_mcmc.h5"
+hfile = "/home/sfr/prospector/ngc3522_parametric_sfh_mcmc.h5"
 if os.path.exists(hfile):
     os.remove(hfile)
 
@@ -232,7 +229,7 @@ if os.path.exists(hfile):
 writer.write_hdf5(
     hfile,
     run_params,
-    model,
+    model_parametric_sfh,
     obs,
     sampler=result,
     #                  optimize_result_list=output["optimization"][0],
@@ -242,19 +239,49 @@ writer.write_hdf5(
 
 # grab results (dictionary), the obs dictionary, and our corresponding models
 # When using parameter files set `dangerous=True`
-res, o, m = reader.results_from("/home/sfr/prospector/ngc3522_mcmc.h5",
-                                model=model)
+res, o, m = reader.results_from(
+    "/home/sfr/prospector/ngc3522_parametric_sfh_mcmc.h5",
+    model=model_parametric_sfh)
+
+n_mcmc_grid = len(res['theta_labels'])
 
 cornerfig = reader.subcorner(res,
                              start=0,
-                             thin=15,
+                             thin=n_mcmc_grid,
                              truths=theta_mean,
-                             fig=plt.subplots(15, 15, figsize=(27, 27))[0])
+                             fig=plt.subplots(n_mcmc_grid, n_mcmc_grid, figsize=(n_mcmc_grid*2, n_mcmc_grid*2))[0])
 
-if os.path.exists('/home/sfr/prospector/ngc3522_mcmc_corner.jpg'):
-    os.remove('/home/sfr/prospector/ngc3522_mcmc_corner.jpg')
+if os.path.exists(
+        '/home/sfr/prospector/ngc3522_parametric_sfh_mcmc_corner.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_parametric_sfh_mcmc_corner.jpg')
 
-plt.savefig('/home/sfr/prospector/ngc3522_mcmc_corner.jpg')
+plt.savefig('/home/sfr/prospector/ngc3522_parametric_sfh_mcmc_corner.jpg')
+
+# Plot the SFH here
+
+theta_logzsol = theta_mean[0]
+theta_dust2 = theta_mean[1]
+theta_fraction_1 = theta_mean[2]
+theta_fraction_2 = theta_mean[3]
+theta_fraction_3 = theta_mean[4]
+theta_fraction_4 = theta_mean[5]
+theta_fraction_5 = theta_mean[6]
+theta_total_mass = theta_mean[7]
+theta_duste_umin = theta_mean[8]
+theta_duste_qpah = theta_mean[9]
+theta_gamma = theta_mean[10]
+theta_fagn = theta_mean[11]
+theta_agn_tau = theta_mean[12]
+theta_dust_ratio = theta_mean[13]
+theta_dust_index = theta_mean[14]
+
+z_fraction = np.array((theta_fraction_1, theta_fraction_2, theta_fraction_3,
+                       theta_fraction_4, theta_fraction_5))
+
+sfr = transforms.zfrac_to_sfr(
+    total_mass=theta_total_mass,
+    z_fraction=z_fraction,
+    agebins=model_parametric_sfh.__dict__['params']['agebins'])
 
 # ppxf
 # ppxf

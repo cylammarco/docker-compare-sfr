@@ -4,13 +4,15 @@ from astropy.io import fits
 from matplotlib import pyplot as plt
 import numpy as np
 
-manga_datacube = fits.open('/home/sfr/example/manga_example_data/manga-7495-12704-LINCUBE.fits.gz')
+manga_datacube = fits.open(
+    '/home/sfr/example/manga_example_data/manga-7495-12704-LINCUBE.fits.gz')
 # log10(wavelength [Å])
 wave = manga_datacube[1].data['wavelength']
 
 # coadded calibrated flux [10-17 ergs/s/cm2/Å]
 # divide by 3631. to turn the unit into maggies
-flux = manga_datacube[1].data['flux'] * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
+flux = manga_datacube[1].data[
+    'flux'] * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
 # inverse variance of flux
 err = np.sqrt(1. / manga_datacube[1].data['inverse_variance']
               ) * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
