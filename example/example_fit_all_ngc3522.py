@@ -10,6 +10,7 @@ from prospect.fitting import fit_model
 from prospect.io import write_results as writer
 from prospect.io import read_results as reader
 from prospect.models import priors
+from prospect.models import transforms
 from prospect.models.templates import TemplateLibrary
 from prospect.utils.obsutils import fix_obs
 
@@ -124,6 +125,8 @@ def build_sps(parametric=True, zcontinuous=1, **extras):
 
 
 model_params = {}
+model_params["zred"] = {}
+model_params["zred"]["init"] = z
 
 run_params = {}
 run_params["zred"] = z
@@ -142,7 +145,10 @@ run_params["nmin"] = 32
 run_params["nwalkers"] = 32
 # Number of iterations of the MCMC sampling
 run_params["niter"] = 4096
-run_params["nburn"] = [int(run_params["niter"] * 0.05), int(run_params["niter"] * 0.1)]
+run_params["nburn"] = [
+    int(run_params["niter"] * 0.05),
+    int(run_params["niter"] * 0.1)
+]
 
 sps = build_sps(zcontinuous=1, **model_params)
 model_parametric_sfh = build_model(template_name='parametric_sfh',
@@ -182,7 +188,6 @@ nwalkers, niter = run_params['nwalkers'], run_params['niter']
 theta = []
 for i in range(nwalkers):
     theta.append(result.chain[i, -1])
-
 
 theta_mean = np.mean(sigma_clip(theta, axis=0), axis=0)
 
@@ -249,7 +254,10 @@ cornerfig = reader.subcorner(res,
                              start=0,
                              thin=n_mcmc_grid,
                              truths=theta_mean,
-                             fig=plt.subplots(n_mcmc_grid, n_mcmc_grid, figsize=(n_mcmc_grid*2, n_mcmc_grid*2))[0])
+                             fig=plt.subplots(n_mcmc_grid,
+                                              n_mcmc_grid,
+                                              figsize=(n_mcmc_grid * 2,
+                                                       n_mcmc_grid * 2))[0])
 
 if os.path.exists(
         '/home/sfr/prospector/ngc3522_parametric_sfh_mcmc_corner.jpg'):
@@ -257,31 +265,188 @@ if os.path.exists(
 
 plt.savefig('/home/sfr/prospector/ngc3522_parametric_sfh_mcmc_corner.jpg')
 
+model_params_alpha = TemplateLibrary["alpha"]
+
+# Use the mean parameters as the initial values of the prospector-alpha model
+model_params_alpha["zred"]["init"] = z
+model_params_alpha["mass"]["init"] = theta_mean[0]
+model_params_alpha["logzsol"]["init"] = theta_mean[1]
+model_params_alpha["dust2"]["init"] = theta_mean[2]
+model_params_alpha["tage"]["init"] = theta_mean[3]
+
+run_params_alpha = run_params.copy()
+#run_params_alpha['mass'] = theta_mean[0]
+#run_params_alpha['total_mass'] = theta_mean[0]
+#run_params_alpha['logzsol'] = theta_mean[1]
+#run_params_alpha['dust2'] = theta_mean[2]
+run_params_alpha["nmin"] = 32
+# Number of emcee walkers
+run_params_alpha["nwalkers"] = 64
+# Number of iterations of the MCMC sampling
+run_params_alpha["niter"] = 8192
+run_params_alpha["nburn"] = [
+    int(run_params_alpha["niter"] * 0.05),
+    int(run_params_alpha["niter"] * 0.1)
+]
+
+sps_alpha = build_sps(parametric=False, zcontinuous=1, **model_params)
+model_alpha = build_model(template_name='alpha', **run_params_alpha)
+
+print("\nInitial free parameter vector theta:\n  {}\n".format(
+    model_alpha.theta))
+print("Initial parameter dictionary:\n{}".format(model_alpha.params))
+
+# Generate the model SED at the initial value of theta
+theta_alpha = model_alpha.theta.copy()
+title_text = ','.join([
+    "{}={}".format(p, model_alpha.params[p][0])
+    for p in model_alpha.free_params
+])
+
+a = 1.0 + model_alpha.params.get('zred', 0.0)  # cosmological redshifting
+
+wspec = sps_alpha.wavelengths
+wspec *= a  # redshift them
+
+print(sps.ssp.libraries)
+
+# --- start minimization ----
+
+os.chdir('/home/sfr/prospector')
+output_alpha = fit_model(obs,
+                         model_alpha,
+                         sps_alpha,
+                         lnprobfn=lnprobfn,
+                         **run_params_alpha)
+
+result_alpha = output_alpha['sampling'][0]
+
+nwalkers, niter = run_params_alpha['nwalkers'], run_params_alpha['niter']
+theta_alpha = []
+for i in range(nwalkers):
+    theta_alpha.append(result_alpha.chain[i, -1])
+
+theta_alpha_mean = np.mean(sigma_clip(theta_alpha, axis=0), axis=0)
+
+# generate model
+prediction_alpha = model_alpha.mean_model(theta_alpha_mean, obs, sps=sps_alpha)
+pspec_alpha, pphot_alpha, pfrac_alpha = prediction_alpha
+
+plt.figure(figsize=(16, 8))
+
+# plot Data, best fit model, and old models
+plt.loglog(obs['wavelength'],
+           obs['spectrum'],
+           label='Input spectrum',
+           lw=1.0,
+           color='gray',
+           alpha=0.75)
+plt.loglog(obs['wavelength'],
+           pspec_alpha,
+           label='Model spectrum',
+           lw=1.0,
+           alpha=0.75)
+
+# Prettify
+plt.xlabel('Wavelength [A]')
+plt.ylabel('Flux Density [maggies]')
+plt.legend(loc='best', fontsize=20)
+plt.tight_layout()
+
+if os.path.exists(
+        '/home/sfr/prospector/ngc3522_prospector_fitted_alpha_model.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_prospector_fitted_alpha_model.jpg')
+
+plt.savefig('/home/sfr/prospector/ngc3522_prospector_fitted_alpha_model.jpg')
+
+hfile = "/home/sfr/prospector/ngc3522_alpha_mcmc.h5"
+if os.path.exists(hfile):
+    os.remove(hfile)
+
+# Does not seem to be writing model, output and sps.
+writer.write_hdf5(
+    hfile,
+    run_params_alpha,
+    model_alpha,
+    obs,
+    sampler=result_alpha,
+    #                  optimize_result_list=output["optimization"][0],
+    tsample=output["sampling"][1],
+    toptimize=output["optimization"][1],
+    sps=sps_alpha)
+
+# grab results (dictionary), the obs dictionary, and our corresponding models
+# When using parameter files set `dangerous=True`
+res_alpha, o, m = reader.results_from(
+    "/home/sfr/prospector/ngc3522_alpha_mcmc.h5", model=model_alpha)
+
+n_mcmc_grid_alpha = len(res_alpha['theta_labels'])
+
+cornerfig = reader.subcorner(res_alpha,
+                             start=0,
+                             thin=n_mcmc_grid_alpha,
+                             truths=theta_alpha_mean,
+                             fig=plt.subplots(
+                                 n_mcmc_grid_alpha,
+                                 n_mcmc_grid_alpha,
+                                 figsize=(n_mcmc_grid_alpha * 2,
+                                          n_mcmc_grid_alpha * 2))[0])
+
+if os.path.exists('/home/sfr/prospector/ngc3522_alpha_corner.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_alpha_corner.jpg')
+
+plt.savefig('/home/sfr/prospector/ngc3522_alpha_corner.jpg')
+
 # Plot the SFH here
 
-theta_logzsol = theta_mean[0]
-theta_dust2 = theta_mean[1]
-theta_fraction_1 = theta_mean[2]
-theta_fraction_2 = theta_mean[3]
-theta_fraction_3 = theta_mean[4]
-theta_fraction_4 = theta_mean[5]
-theta_fraction_5 = theta_mean[6]
-theta_total_mass = theta_mean[7]
-theta_duste_umin = theta_mean[8]
-theta_duste_qpah = theta_mean[9]
-theta_gamma = theta_mean[10]
-theta_fagn = theta_mean[11]
-theta_agn_tau = theta_mean[12]
-theta_dust_ratio = theta_mean[13]
-theta_dust_index = theta_mean[14]
+theta_logzsol = theta_alpha_mean[0]
+theta_dust2 = theta_alpha_mean[1]
+theta_fraction_1 = theta_alpha_mean[2]
+theta_fraction_2 = theta_alpha_mean[3]
+theta_fraction_3 = theta_alpha_mean[4]
+theta_fraction_4 = theta_alpha_mean[5]
+theta_fraction_5 = theta_alpha_mean[6]
+theta_total_mass = theta_alpha_mean[7]
+theta_duste_umin = theta_alpha_mean[8]
+theta_duste_qpah = theta_alpha_mean[9]
+theta_gamma = theta_alpha_mean[10]
+theta_fagn = theta_alpha_mean[11]
+theta_agn_tau = theta_alpha_mean[12]
+theta_dust_ratio = theta_alpha_mean[13]
+theta_dust_index = theta_alpha_mean[14]
 
 z_fraction = np.array((theta_fraction_1, theta_fraction_2, theta_fraction_3,
                        theta_fraction_4, theta_fraction_5))
+agebins = model_parametric_sfh.__dict__['params']['agebins']
+sfr = transforms.zfrac_to_sfr(total_mass=theta_total_mass,
+                              z_fraction=z_fraction,
+                              agebins=agebins)
 
-sfr = transforms.zfrac_to_sfr(
-    total_mass=theta_total_mass,
-    z_fraction=z_fraction,
-    agebins=model_parametric_sfh.__dict__['params']['agebins'])
+plt.figure(figsize=(8, 8))
+plt.clf()
+
+agebins_edges = np.append(agebins[:,0], agebins[:,1][-1])
+
+# plot Data, best fit model, and old models
+#for i, age in enumerate(agebins):
+#    plt.plot(age, [sfr[i], sfr[i]], lw=1.0, alpha=0.75, color='C0')
+
+
+
+plt.bar(agebins_edges[:-1], height=sfr, width=np.diff(agebins_edges), align='edge')
+plt.plot(agebins, sfr, drawstyle='steps-mid')
+
+# Prettify
+plt.xlabel('log(Age) / yr')
+plt.ylabel('Star Formation Rate')
+plt.ylim(ymin=0)
+plt.xlim(6, np.log10(14e9))
+plt.tight_layout()
+
+if os.path.exists('/home/sfr/prospector/ngc3522_alpha_sfh.jpg'):
+    os.remove('/home/sfr/prospector/ngc3522_alpha_sfh.jpg')
+
+plt.savefig('/home/sfr/prospector/ngc3522_alpha_sfh.jpg')
 
 # ppxf
 # ppxf
@@ -293,7 +458,6 @@ sfr = transforms.zfrac_to_sfr(
 # ppxf
 # ppxf
 
-from time import perf_counter as clock
 from os import path
 import os
 
@@ -313,18 +477,24 @@ limit_doublets = True
 
 ppxf_dir = path.dirname(path.realpath(ppxf_package.__file__))
 
-# Read SDSS DR8 galaxy spectrum taken from here http://www.sdss3.org/dr8/
-# The spectrum is *already* log rebinned by the SDSS DR8
-# pipeline and log_rebin should not be used in this case.
-#
-t = ngc[1].data
+# coadded calibrated flux [10-17 ergs/s/cm2/Å]
+# divide by 3631. to turn the unit into maggies
+flux = ngc[1].data['flux'] * 1e-17
+# inverse variance of flux
+err = np.sqrt(1. / ngc[1].data['inverse_variance']
+              ) * 1e-17
+wave = ngc[1].data['wavelength']
 
 # Only use the wavelength range in common between galaxy and stellar library.
 #
-mask = (t['wavelength'] > 3540.) & (t['wavelength'] < 7400.)
-flux = t['flux'][mask]
-galaxy = flux / np.median(flux)  # Normalize spectrum to avoid numerical issues
-wave = t['wavelength'][mask]
+mask = (wave > 3540.) & (wave < 7400.)
+norm_factor = np.median(flux)
+
+galaxy = flux[mask]  # Normalize spectrum to avoid numerical issues
+noise = err[mask]
+wave = wave[mask]
+
+noise[~np.isfinite(noise)] = max(noise[np.isfinite(noise)])
 
 # The SDSS wavelengths are in vacuum, while the MILES ones are in air.
 # For a rigorous treatment, the SDSS vacuum wavelengths should be
@@ -338,7 +508,7 @@ wave *= np.median(util.vac_to_air(wave) / wave)
 # A constant noise is not a bad approximation in the fitted wavelength
 # range and reduces the noise in the fit.
 #
-noise = np.full_like(galaxy, 0.01635)  # Assume constant noise per pixel here
+#noise = np.full_like(galaxy, err)  # Assume constant noise per pixel here
 
 # The velocity step was already chosen by the SDSS pipeline
 # and we convert it below to km/s
@@ -364,7 +534,7 @@ reg_dim = miles.templates.shape[1:]
 stars_templates = miles.templates.reshape(miles.templates.shape[0], -1)
 
 # See the pPXF documentation for the keyword REGUL
-regul_err = 0.013  # Desired regularization error
+regul_err = np.nanmedian(noise)  # Desired regularization error
 
 # Estimate the wavelength fitted range in the rest frame.
 lam_range_gal = np.array([np.min(wave), np.max(wave)]) / (1 + z)
@@ -428,6 +598,7 @@ pp = ppxf(templates,
           clean=True,
           vsyst=dv,
           lam=wave,
+          reddening=True,
           regul=1. / regul_err,
           reg_dim=reg_dim,
           component=component)
@@ -443,7 +614,9 @@ weights = weights.reshape(reg_dim) / weights.sum()  # Normalized
 sfr = np.sum(weights, axis=1)
 age = miles.age_grid[:, 0]
 plt.figure(figsize=(10, 6))
-plt.plot(age, sfr)
+plt.clf()
+plt.scatter(age, sfr, s=5)
+plt.plot(age, sfr, drawstyle='steps-mid')
 plt.xlabel('Lookback Time / Gyr')
 plt.ylabel('Relative Star Formation Rate')
 plt.tight_layout()
