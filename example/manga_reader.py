@@ -15,13 +15,17 @@ class manga_reader:
 
         self.redshift = redshift
 
-    def _get_metadata(self, header):
+    def _get_metadata(self, header, header2):
 
-        self.x_center = int(header['CRPIX1']) - 1
-        self.y_center = int(header['CRPIX2']) - 1
+        self.x_center = int(header2['CRPIX1']) - 1
+        self.y_center = int(header2['CRPIX2']) - 1
 
-        self.dx = header['CD1_1'] * 3600.  # deg to arcsec
-        self.dy = header['CD2_2'] * 3600.  # deg to arcsec
+        try:
+            self.dx = header2['CD1_1'] * 3600.  # deg to arcsec
+            self.dy = header2['CD2_2'] * 3600.  # deg to arcsec
+        except Exception:
+            self.dx = header2['PC1_1'] * 3600
+            self.dy = header2['PC2_2'] * 3600
 
         self.ebvgal = float(header['EBVGAL'])
         self.gfwhm = float(header['GFWHM'])
@@ -29,47 +33,104 @@ class manga_reader:
         self.ifwhm = float(header['IFWHM'])
         self.zfwhm = float(header['ZFWHM'])
 
+        self.xdim, self.ydim = np.shape(self.flux[0])
+        self._idx_to_pix = {}
+
+        for id in self.unique_id:
+
+            self._idx_to_pix[id] = np.column_stack(np.where(self.binid == id))
+
     def load_lincube(self, filename):
 
         self.lincube_data = fits.open(filename)
+        self.lincube_header = self.lincube_data[0].header
         self.lincube_flux_header = self.lincube_data['flux'].header
 
+        self.binid = self.lincube_data['binid'].data[0]
+        self.unique_id = np.unique(self.binid)
+        self.unique_id = self.unique_id[self.unique_id >= 0]
         self.flux = self.lincube_data['flux'].data
-        self.flux_err = 1. / self.lincube_data['ivar'].data
+        self.flux_err = np.sqrt(1. / self.lincube_data['ivar'].data)
         self.wave = self.lincube_data['wave'].data
 
-        self._get_metadata(self.lincube_flux_header)
+        self._get_metadata(self.lincube_header, self.lincube_flux_header)
 
     def load_logcube(self, filename):
 
         self.logcube_data = fits.open(filename)
+        self.logcube_header = self.logcube_data[0].header
         self.logcube_flux_header = self.logcube_data['flux'].header
 
+        self.binid = self.logcube_data['binid'].data[0]
+        self.unique_id = np.unique(self.binid)
+        self.unique_id = self.unique_id[self.unique_id >= 0]
         self.flux = 10.**self.logcube_data['flux'].data
-        self.flux_err = 1. / 10.**self.logcube_data['ivar'].data
+        self.flux_err = np.sqrt(1. / 10.**self.logcube_data['ivar'].data)
         self.wave = self.logcube_data['wave'].data
 
-        self._get_metadata(self.logcube_flux_header)
+        self._get_metadata(self.logcube_header, self.logcube_flux_header)
 
-    def iterate_data(self, log=False):
+    def iterate_data(self, mode='vor', log=False):
 
-        xdim, ydim = np.shape(self.flux[0])
+        if mode == 'pix':
 
-        if log:
+            if log:
 
-            return [
-                np.vstack((self.wave, self.flux[:, i, j], self.flux_err[:, i,
-                                                                        j]))
-                for (i, j) in list(itertools.product(range(xdim), range(ydim)))
-            ]
+                return [
+                    np.vstack((self.wave, np.log10(self.flux[:, i, j]),
+                               np.log10(self.flux_err[:, i, j])))
+                    for (i, j) in list(
+                        itertools.product(range(self.xdim), range(self.ydim)))
+                ]
+
+            else:
+
+                return [
+                    np.vstack((self.wave, self.flux[:, i,
+                                                    j], self.flux_err[:, i,
+                                                                      j]))
+                    for (i, j) in list(
+                        itertools.product(range(self.xdim), range(self.ydim)))
+                ]
+
+        elif mode == 'vor':
+
+            pix = [self._idx_to_pix[k] for k in self.unique_id]
+            for i, p in enumerate(pix):
+                pix[i] = p[0]
+
+            if log:
+
+                return [
+                    np.vstack((self.wave, np.log10(self.flux[:, i, j]),
+                               np.log10(self.flux_err[:, i, j])))
+                    for (i, j) in pix
+                ]
+
+            else:
+
+                return [
+                    np.vstack((self.wave, self.flux[:, i,
+                                                    j], self.flux_err[:, i,
+                                                                      j]))
+                    for (i, j) in pix
+                ]
 
         else:
 
-            return [
-                np.vstack((self.wave, self.flux[:, i, j], self.flux_err[:, i,
-                                                                        j]))
-                for (i, j) in list(itertools.product(range(xdim), range(ydim)))
-            ]
+            print('Unknown mode: {}.'.format(mode))
+
+    def idx_to_pix(self, idx):
+        '''
+        idx starts from 1.
+        '''
+        return self._idx_to_pix[idx]
+
+    def pix_to_idx(self, x, y):
+        '''
+        pixel position starts from 0.
+        '''
+        return self.binid[x, y]
 
     def _imshow(self, log, **kwarg):
 

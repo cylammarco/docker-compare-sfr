@@ -35,6 +35,7 @@ RUN pip3 install prospector/.
 # Install ppxf
 # https://www-astro.physics.ox.ac.uk/~mxc/software/#ppxf
 RUN pip3 install ppxf
+RUN pip3 install plotbin
 
 # create "home directory"
 WORKDIR /home/sfr
