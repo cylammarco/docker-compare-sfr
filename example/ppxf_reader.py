@@ -1,10 +1,11 @@
 import numpy as np
 import os
 import glob
-from plotbin import plot_velfield
+from plotbin.plot_velfield import plot_velfield
+from matplotlib import pyplot as plt
+
 
 class ppxf_reader:
-
     def __init__(self):
 
         pass
@@ -17,21 +18,56 @@ class ppxf_reader:
 
         return idx, pix, ppxf_output
 
-    def load(self, ppxf_output_folder):
+    def load(self, ppxf_output_folder, verbose=True):
+        '''
+        Parameters
+        ----------
+        ppxf_output_folder: str
+            The path to the folder relative to the current working directory,
+            or an absolute path.
 
-        self.ppxf_output_folder = '/home/sfr/ppxf/' + ppxf_output_folder
+        '''
 
-        self.idx_to_pix_filename = self.ppxf_output_folder + '/manga_' + '_'.join(self.ppxf_output_folder.split('-')[1:3]) + '_ppxf_idx_to_pix.npy'
-        self.idx_to_pix = np.load(os.path.join(self.ppxf_output_folder, self.idx_to_pix_filename), allow_pickle=True).item()
+        # Sort out the input paths (ppxf_output refers to the output from
+        # ppxf, not the output from this script)
+        self.ppxf_output_folder = os.path.abspath(ppxf_output_folder)
+        self.folder_name = self.ppxf_output_folder.split(os.sep)[-1]
 
-        idx_complete = []
+        # Sort out the output paths
+        self.ppxf_npy_folder = os.path.join(self.ppxf_output_folder, 'npy')
+        '''
+        self.ppxf_sfh_folder = os.path.join(self.ppxf_output_folder, 'sfh')
+        self.ppxf_fitted_model_folder = os.path.join(self.ppxf_output_folder,
+                                                     'fitted_model')
+        self.ppxf_weights_folder = os.path.join(self.ppxf_output_folder, 'weights')
+        '''
+        self.plots_folder = os.path.join(self.ppxf_output_folder,
+                                         'diagnostic_plots')
+
+        if not os.path.exists(self.plots_folder):
+            os.mkdir(self.plots_folder)
+
+        # Get the voronoi idx to pixel position
+        self.idx_to_pix_path = os.path.join(
+            self.ppxf_output_folder,
+            'manga_' + '_'.join(self.ppxf_output_folder.split('-')[1:3]) +
+            '_ppxf_idx_to_pix.npy')
+        self.idx_to_pix = np.load(self.idx_to_pix_path,
+                                  allow_pickle=True).item()
+
+        idx_full_list = []
         pix_x = []
         pix_y = []
         self.results = {}
-        self.filelist = glob.glob(self.ppxf_output_folder + '/' + '*[0-9].npy')
+        self.filelist = glob.glob(
+            os.path.join(self.ppxf_npy_folder, '*[0-9].npy'))
         for filename in self.filelist:
-            print('Loading {}.'.format(filename))
-            idx, pix, ppxf_output = self.load_file(os.path.join(self.ppxf_output_folder, filename))
+
+            if verbose:
+                print('Loading {}.'.format(filename))
+
+            idx, pix, ppxf_output = self.load_file(
+                os.path.join(self.ppxf_output_folder, filename))
             self.results[idx] = {}
             self.results[idx]['pix'] = pix
             self.results[idx]['flux'] = ppxf_output.__dict__['galaxy']
@@ -43,10 +79,13 @@ class ppxf_reader:
             self.results[idx]['templates'] = ppxf_output.__dict__['templates']
             self.results[idx]['velscale'] = ppxf_output.__dict__['velscale']
             self.results[idx]['gas_flux'] = ppxf_output.__dict__['gas_flux']
-            self.results[idx]['gas_flux_error'] = ppxf_output.__dict__['gas_flux_error']
-            self.results[idx]['gas_bestfit'] = ppxf_output.__dict__['gas_bestfit']
+            self.results[idx]['gas_flux_error'] = ppxf_output.__dict__[
+                'gas_flux_error']
+            self.results[idx]['gas_bestfit'] = ppxf_output.__dict__[
+                'gas_bestfit']
             self.results[idx]['component'] = ppxf_output.__dict__['component']
-            self.results[idx]['gas_component'] = ppxf_output.__dict__['gas_component']
+            self.results[idx]['gas_component'] = ppxf_output.__dict__[
+                'gas_component']
             self.results[idx]['gas_names'] = ppxf_output.__dict__['gas_names']
             self.results[idx]['gas_any'] = ppxf_output.__dict__['gas_any']
             self.results[idx]['ncomp'] = ppxf_output.__dict__['ncomp']
@@ -58,18 +97,18 @@ class ppxf_reader:
             self.results[idx]['error'] = ppxf_output.__dict__['error']
 
             for j in range(np.shape(pix)[0]):
-                idx_complete.append(idx)
+                idx_full_list.append(idx)
                 pix_x.append(pix[j][0])
                 pix_y.append(pix[j][1])
 
         self.idx = self.results.keys()
-        self.idx_complete = np.array(idx_complete)
+        self.idx_full_list = np.array(idx_full_list)
         self.pix_x = np.array(pix_x)
         self.pix_y = np.array(pix_y)
 
-    def display_vel(self):
+    def display_vel(self, fig_type='png'):
 
-        velscale = [self.results[i]['velscale'] for i in self.idx_complete]
-        img = plot_velfield(self.pix_x, self.pix_y, velscale)
-
-        return img
+        velscale = [self.results[i]['velscale'] for i in self.idx_full_list]
+        plt.figure(1)
+        plot_velfield(self.pix_x, self.pix_y, velscale)
+        plt.savefig(os.path.join(self.plots_folder, 'velscale.' + fig_type))
