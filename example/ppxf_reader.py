@@ -1,14 +1,24 @@
-import numpy as np
 import os
 import glob
-from plotbin.plot_velfield import plot_velfield
+
 from matplotlib import pyplot as plt
+import numpy as np
+from plotbin.plot_velfield import plot_velfield
+import ppxf as ppxf_package
+import ppxf.miles_util as lib
 
 
 class ppxf_reader:
     def __init__(self):
 
-        pass
+        ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
+        pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
+
+        # Only getting the age from the miles library, the values in the
+        # second and third arguments are random.
+        miles = lib.miles(pathname, 100, 2.5)
+
+        self.age = miles.age_grid[:, 0]
 
     def load_file(self, ppxf_output_filename):
 
@@ -112,26 +122,47 @@ class ppxf_reader:
             self.results[i]['velscale'] for i in self.idx_full_list
         ]
         plt.figure(1)
-        plot_velfield(self.pix_x, self.pix_y, self.velscale)
+        plt.clf()
+        plot_velfield(self.pix_x, self.pix_y, self.velscale, nodots=True, colorbar=True, origin='lower')
+        plt.title('velscale')
         plt.savefig(os.path.join(self.plots_folder, 'velscale.' + fig_type))
 
-    def display_chi2(self, fig_type='png'):
-
-        self.chi2 = [self.results[i]['chi2'] for i in self.idx_full_list]
-        plt.figure(2)
-        plot_velfield(self.pix_x, self.pix_y, self.chi2)
-        plt.savefig(os.path.join(self.plots_folder, 'chi2.' + fig_type))
-
     def display_flux(self, wave=[6553, 6573], fig_type='png'):
+
         self.flux = [
             np.sum(
                 self.results[i]['flux'][(self.results[i]['wave'] > wave[0])
                                         & (self.results[i]['wave'] < wave[1])])
             for i in self.idx_full_list
         ]
-        plt.figure(3)
-        plot_velfield(self.pix_x, self.pix_y, self.flux)
+        plt.figure(2)
+        plt.clf()
+        plot_velfield(self.pix_x, self.pix_y, self.flux, nodots=True, colorbar=True, origin='lower')
+        plt.title('Flux between {} and {} A'.format(wave[0], wave[1]))
         plt.savefig(os.path.join(self.plots_folder, 'flux.' + fig_type))
+
+    def display_chi2(self, fig_type='png'):
+
+        self.chi2 = [self.results[i]['chi2'] for i in self.idx_full_list]
+        plt.figure(3)
+        plt.clf()
+        plot_velfield(self.pix_x, self.pix_y, self.chi2, nodots=True, colorbar=True, origin='lower')
+        plt.title('chi2')
+        plt.savefig(os.path.join(self.plots_folder, 'chi2.' + fig_type))
+
+    def display_sfh(self, fig_type='png'):
+
+        self.sfh = np.column_stack([
+            np.sum(
+                self.results[i]['weights'][~self.results[i]['gas_component']].reshape(self.results[i]['reg_dim']),
+                axis=1) for i in self.idx_full_list
+        ])
+        for i in range(len(self.sfh)):
+            plt.figure(i)
+            plt.clf()
+            plot_velfield(self.pix_x, self.pix_y, self.sfh[i], nodots=True, colorbar=True, origin='lower')
+            plt.title('SFR at {} Gyr'.format(self.age[i]))
+            plt.savefig(os.path.join(self.plots_folder, 'sfh_{}.'.format(i) + fig_type))
 
     def display_gas_flux(self, fig_type='png'):
 
@@ -149,8 +180,9 @@ class ppxf_reader:
                 except Exception:
                     pass
 
-        for i, gn in enumerate(gas_names):
-            plt.figure(i+100)
-            plot_velfield(self.pix_x, self.pix_y, self.gas_flux[:, i])
+        for j, gn in enumerate(gas_names):
+            plt.figure(j + 100)
+            plt.clf()
+            plot_velfield(self.pix_x, self.pix_y, self.gas_flux[:, j], nodots=True, colorbar=True, origin='lower')
             plt.title(gn)
             plt.savefig(os.path.join(self.plots_folder, gn + '.' + fig_type))

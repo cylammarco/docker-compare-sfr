@@ -220,6 +220,8 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
 
     np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}'.
         format(foldername, i), pp)
+    np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}_miles_model'.
+        format(foldername, i), miles)
 
     # When the two Delta Chi^2 below are the same, the solution
     # is the smoothest consistent with the observed spectrum.
