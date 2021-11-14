@@ -197,7 +197,7 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
                   moments=moments,
                   degree=-1,
                   mdegree=10,
-                  clean=True,
+                  clean=False,
                   vsyst=dv,
                   lam=wave,
                   regul=1. / regul_err,

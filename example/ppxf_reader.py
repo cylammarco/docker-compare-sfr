@@ -50,7 +50,7 @@ class ppxf_reader:
         # Get the voronoi idx to pixel position
         self.idx_to_pix_path = os.path.join(
             self.ppxf_output_folder,
-            'manga_' + '_'.join(self.ppxf_output_folder.split('-')[1:3]) +
+            'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
             '_ppxf_idx_to_pix.npy')
         self.idx_to_pix = np.load(self.idx_to_pix_path,
                                   allow_pickle=True).item()
@@ -106,9 +106,51 @@ class ppxf_reader:
         self.pix_x = np.array(pix_x)
         self.pix_y = np.array(pix_y)
 
-    def display_vel(self, fig_type='png'):
+    def display_velscale(self, fig_type='png'):
 
-        velscale = [self.results[i]['velscale'] for i in self.idx_full_list]
+        self.velscale = [
+            self.results[i]['velscale'] for i in self.idx_full_list
+        ]
         plt.figure(1)
-        plot_velfield(self.pix_x, self.pix_y, velscale)
+        plot_velfield(self.pix_x, self.pix_y, self.velscale)
         plt.savefig(os.path.join(self.plots_folder, 'velscale.' + fig_type))
+
+    def display_chi2(self, fig_type='png'):
+
+        self.chi2 = [self.results[i]['chi2'] for i in self.idx_full_list]
+        plt.figure(2)
+        plot_velfield(self.pix_x, self.pix_y, self.chi2)
+        plt.savefig(os.path.join(self.plots_folder, 'chi2.' + fig_type))
+
+    def display_flux(self, wave=[6553, 6573], fig_type='png'):
+        self.flux = [
+            np.sum(
+                self.results[i]['flux'][(self.results[i]['wave'] > wave[0])
+                                        & (self.results[i]['wave'] < wave[1])])
+            for i in self.idx_full_list
+        ]
+        plt.figure(3)
+        plot_velfield(self.pix_x, self.pix_y, self.flux)
+        plt.savefig(os.path.join(self.plots_folder, 'flux.' + fig_type))
+
+    def display_gas_flux(self, fig_type='png'):
+
+        gas_names = np.unique(
+            np.concatenate(
+                [self.results[i]['gas_names'] for i in range(len(self.idx))]))
+
+        self.gas_flux = np.zeros((len(self.idx_full_list), len(self.idx)))
+
+        for idx in self.idx_full_list:
+            for j, gn in enumerate(gas_names):
+                try:
+                    self.gas_flux[idx][j] = self.results[idx]['gas_flux'][
+                        np.where(self.results[idx]['gas_names'] == gn)]
+                except Exception:
+                    pass
+
+        for i, gn in enumerate(gas_names):
+            plt.figure(i+100)
+            plot_velfield(self.pix_x, self.pix_y, self.gas_flux[:, i])
+            plt.title(gn)
+            plt.savefig(os.path.join(self.plots_folder, gn + '.' + fig_type))
