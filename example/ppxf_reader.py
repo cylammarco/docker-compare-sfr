@@ -1,11 +1,14 @@
 import os
 import glob
 
+from astropy.cosmology import FlatLambdaCDM
 from matplotlib import pyplot as plt
+import astropy.units as u
 import numpy as np
 from plotbin.plot_velfield import plot_velfield
 import ppxf as ppxf_package
 import ppxf.miles_util as lib
+from speclite import filters as sfilters
 
 
 class ppxf_reader:
@@ -14,17 +17,129 @@ class ppxf_reader:
         ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
         pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
 
+        file_vega = ppxf_dir + "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
+        file_sdss = ppxf_dir + "/miles_models/Vazdekis2012_ssp_sdss_miuscat_UN1.30_v9.txt"
+        file1 = ppxf_dir + "/miles_models/Vazdekis2012_ssp_mass_Padova00_UN_baseFe_v10.0.txt"
+
+        self.vega_bands = ["U", "B", "V", "R", "I", "J", "H", "K"]
+        self.sdss_bands = ["u", "g", "r", "i"]
+        self.vega_sun_mag = [
+            5.600, 5.441, 4.820, 4.459, 4.148, 3.711, 3.392, 3.334
+        ]
+        self.sdss_sun_mag = [6.55, 5.12, 4.68,
+                             4.57]  # values provided by Elena Ricciardelli
+
+        self.slope1, self.MH1, self.Age1, self.m_no_gas = np.loadtxt(
+            file1, usecols=[1, 2, 3, 5]).T
+        slope2_vega, MH2_vega, Age2_vega, m_U, m_B, m_V, m_R, m_I, m_J, m_H, m_K = np.loadtxt(
+            file_vega, usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).T
+        slope2_sdss, MH2_sdss, Age2_sdss, m_u, m_g, m_r, m_i = np.loadtxt(
+            file_sdss, usecols=[1, 2, 3, 4, 5, 6, 7]).T
+
+        self.slope2 = {"vega": slope2_vega, "sdss": slope2_sdss}
+        self.MH2 = {"vega": MH2_vega, "sdss": MH2_sdss}
+        self.Age2 = {"vega": Age2_vega, "sdss": Age2_sdss}
+
+        self.m_vega = {
+            "U": m_U,
+            "B": m_B,
+            "V": m_V,
+            "R": m_R,
+            "I": m_I,
+            "J": m_J,
+            "H": m_H,
+            "K": m_K
+        }
+        self.m_sdss = {"u": m_u, "g": m_g, "r": m_r, "i": m_i}
+
         # Only getting the age from the miles library, the values in the
         # second and third arguments are random.
-        miles = lib.miles(pathname, 100, 2.5)
+        self.miles_backup = lib.miles(pathname, 100, 2.5)
+        self.age_backup = self.miles_backup.age_grid[:, 0]
 
-        self.age = miles.age_grid[:, 0]
+        self.miles = self.miles_backup
+        self.age = self.age_backup
+        self.sfh = None
+        self.luminosity = None
+        self.ml_ratio = None
+
+        self.idx_to_pix = None
+
+    def mass_to_light(self, weights, band="r", quiet=False):
+        """
+        Computes the M/L in a chosen band, given the weights produced
+        in output by pPXF. A Salpeter IMF is assumed (slope=1.3).
+        The returned M/L includes living stars and stellar remnants,
+        but excludes the gas lost during stellar evolution.
+
+        This procedure uses the photometric predictions
+        from Vazdekis+12 and Ricciardelli+12
+        http://adsabs.harvard.edu/abs/2012MNRAS.424..157V
+        http://adsabs.harvard.edu/abs/2012MNRAS.424..172R
+        they were downloaded in December 2016 below and are included in pPXF with permission
+        http://www.iac.es/proyecto/miles/pages/photometric-predictions/based-on-miuscat-seds.php
+
+        :param weights: pPXF output with dimensions weights[miles.n_ages, miles.n_metal]
+        :param band: possible choices are "U", "B", "V", "R", "I", "J", "H", "K" for
+            the Vega photometric system and "u", "g", "r", "i" for the SDSS AB system.
+        :param quiet: set to True to suppress the printed output.
+        :return: mass_to_light in the given band
+
+        """
+        assert self.miles.age_grid.shape == self.miles.metal_grid.shape == weights.shape, \
+            "Input weight dimensions do not match"
+
+        if band in self.vega_bands:
+            k = self.vega_bands.index(band)
+            sun_mag = self.vega_sun_mag[k]
+            mag = self.m_vega[band]
+            Age2 = self.Age2['vega']
+            slope2 = self.slope2['vega']
+            MH2 = self.MH2['vega']
+        elif band in self.sdss_bands:
+            k = self.sdss_bands.index(band)
+            sun_mag = self.sdss_sun_mag[k]
+            mag = self.m_sdss[band]
+            Age2 = self.Age2['sdss']
+            slope2 = self.slope2['sdss']
+            MH2 = self.MH2['sdss']
+        else:
+            raise ValueError("Unsupported photometric band")
+
+        # The following loop is a brute force, but very safe and general,
+        # way of matching the photometric quantities to the SSP spectra.
+        # It makes no assumption on the sorting and dimensions of the files
+        mass_no_gas_grid = np.empty_like(weights)
+        lum_grid = np.empty_like(weights)
+        for j in range(self.miles.n_ages):
+            for k in range(self.miles.n_metal):
+                p1 = (np.abs(self.miles.age_grid[j, k] - self.Age1) < 0.001) & \
+                        (np.abs(self.miles.metal_grid[j, k] - self.MH1) < 0.01) & \
+                        (np.abs(1.30 - self.slope1) < 0.01)
+                mass_no_gas_grid[j, k] = self.m_no_gas[p1]
+
+                p2 = (np.abs(self.miles.age_grid[j, k] - Age2) < 0.001) & \
+                        (np.abs(self.miles.metal_grid[j, k] - MH2) < 0.01) & \
+                        (np.abs(1.30 - slope2) < 0.01)
+                lum_grid[j, k] = 10**(-0.4 * (mag[p2] - sun_mag))
+
+        # This is eq.(2) in Cappellari+13
+        # http://adsabs.harvard.edu/abs/2013MNRAS.432.1862C
+        mlpop = np.sum(weights * mass_no_gas_grid) / np.sum(weights * lum_grid)
+
+        if not quiet:
+            print('M/L_' + band + ': %#.4g' % mlpop)
+
+        return mlpop
 
     def load_file(self, ppxf_output_filename):
 
-        idx = int(ppxf_output_filename.split('.')[0].split('_')[-1])
+        idx = int(ppxf_output_filename.split('.')[-2].split('_')[-1])
         ppxf_output = np.load(ppxf_output_filename, allow_pickle=True).item()
-        pix = self.idx_to_pix[idx]
+        if self.idx_to_pix is not None:
+            pix = self.idx_to_pix[idx]
+        else:
+            pix = None
 
         return idx, pix, ppxf_output
 
@@ -45,12 +160,7 @@ class ppxf_reader:
 
         # Sort out the output paths
         self.ppxf_npy_folder = os.path.join(self.ppxf_output_folder, 'npy')
-        '''
-        self.ppxf_sfh_folder = os.path.join(self.ppxf_output_folder, 'sfh')
-        self.ppxf_fitted_model_folder = os.path.join(self.ppxf_output_folder,
-                                                     'fitted_model')
-        self.ppxf_weights_folder = os.path.join(self.ppxf_output_folder, 'weights')
-        '''
+        self.ppxf_model_folder = os.path.join(self.ppxf_output_folder, 'model')
         self.plots_folder = os.path.join(self.ppxf_output_folder,
                                          'diagnostic_plots')
 
@@ -62,6 +172,10 @@ class ppxf_reader:
             self.ppxf_output_folder,
             'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
             '_ppxf_idx_to_pix.npy')
+        self.miles_model_path = os.path.join(
+            self.ppxf_output_folder,
+            'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
+            '_ppxf_miles_model.npy')
         self.idx_to_pix = np.load(self.idx_to_pix_path,
                                   allow_pickle=True).item()
 
@@ -80,31 +194,35 @@ class ppxf_reader:
                 os.path.join(self.ppxf_output_folder, filename))
             self.results[idx] = {}
             self.results[idx]['pix'] = pix
-            self.results[idx]['flux'] = ppxf_output.__dict__['galaxy']
-            self.results[idx]['flux_err'] = ppxf_output.__dict__['noise']
-            self.results[idx]['vsyst'] = ppxf_output.__dict__['vsyst']
-            self.results[idx]['regul'] = ppxf_output.__dict__['regul']
-            self.results[idx]['wave'] = ppxf_output.__dict__['lam']
-            self.results[idx]['reg_dim'] = ppxf_output.__dict__['reg_dim']
-            self.results[idx]['templates'] = ppxf_output.__dict__['templates']
-            self.results[idx]['velscale'] = ppxf_output.__dict__['velscale']
-            self.results[idx]['gas_flux'] = ppxf_output.__dict__['gas_flux']
-            self.results[idx]['gas_flux_error'] = ppxf_output.__dict__[
-                'gas_flux_error']
-            self.results[idx]['gas_bestfit'] = ppxf_output.__dict__[
-                'gas_bestfit']
-            self.results[idx]['component'] = ppxf_output.__dict__['component']
-            self.results[idx]['gas_component'] = ppxf_output.__dict__[
-                'gas_component']
-            self.results[idx]['gas_names'] = ppxf_output.__dict__['gas_names']
-            self.results[idx]['gas_any'] = ppxf_output.__dict__['gas_any']
-            self.results[idx]['ncomp'] = ppxf_output.__dict__['ncomp']
-            self.results[idx]['weights'] = ppxf_output.__dict__['weights']
-            self.results[idx]['bestfit'] = ppxf_output.__dict__['bestfit']
-            self.results[idx]['ndof'] = ppxf_output.__dict__['ndof']
-            self.results[idx]['chi2'] = ppxf_output.__dict__['chi2']
-            self.results[idx]['sol'] = ppxf_output.__dict__['sol']
-            self.results[idx]['error'] = ppxf_output.__dict__['error']
+            self.results[idx]['flux'] = ppxf_output.galaxy
+            self.results[idx]['flux_err'] = ppxf_output.noise
+            self.results[idx]['vsyst'] = ppxf_output.vsyst
+            self.results[idx]['regul'] = ppxf_output.regul
+            self.results[idx]['wave'] = ppxf_output.lam
+            self.results[idx]['reg_dim'] = ppxf_output.reg_dim
+            self.results[idx]['templates'] = ppxf_output.templates
+            self.results[idx]['velscale'] = ppxf_output.velscale
+            self.results[idx]['component'] = ppxf_output.component
+            self.results[idx]['gas_bestfit'] = ppxf_output.gas_bestfit
+            self.results[idx]['gas_flux'] = ppxf_output.gas_flux
+            self.results[idx]['gas_flux_error'] = ppxf_output.gas_flux_error
+            self.results[idx]['gas_mpoly'] = ppxf_output.gas_mpoly
+            self.results[idx]['gas_reddening'] = ppxf_output.gas_reddening
+            self.results[idx]['gas_component'] = ppxf_output.gas_component
+            self.results[idx]['gas_names'] = ppxf_output.gas_names
+            self.results[idx]['gas_any'] = ppxf_output.gas_any
+            self.results[idx]['matrix'] = ppxf_output.matrix
+            self.results[idx]['mpoly'] = ppxf_output.mpoly
+            self.results[idx]['mpolyweights'] = ppxf_output.mpolyweights
+            self.results[idx]['polyweights'] = ppxf_output.polyweights
+            self.results[idx]['reddening'] = ppxf_output.reddening
+            self.results[idx]['ncomp'] = ppxf_output.ncomp
+            self.results[idx]['weights'] = ppxf_output.weights
+            self.results[idx]['bestfit'] = ppxf_output.bestfit
+            self.results[idx]['ndof'] = ppxf_output.ndof
+            self.results[idx]['chi2'] = ppxf_output.chi2
+            self.results[idx]['sol'] = ppxf_output.sol
+            self.results[idx]['error'] = ppxf_output.error
 
             for j in range(np.shape(pix)[0]):
                 idx_full_list.append(idx)
@@ -123,7 +241,12 @@ class ppxf_reader:
         ]
         plt.figure(1)
         plt.clf()
-        plot_velfield(self.pix_x, self.pix_y, self.velscale, nodots=True, colorbar=True, origin='lower')
+        plot_velfield(self.pix_x,
+                      self.pix_y,
+                      self.velscale,
+                      nodots=True,
+                      colorbar=True,
+                      origin='lower')
         plt.title('velscale')
         plt.savefig(os.path.join(self.plots_folder, 'velscale.' + fig_type))
 
@@ -137,7 +260,12 @@ class ppxf_reader:
         ]
         plt.figure(2)
         plt.clf()
-        plot_velfield(self.pix_x, self.pix_y, self.flux, nodots=True, colorbar=True, origin='lower')
+        plot_velfield(self.pix_x,
+                      self.pix_y,
+                      self.flux,
+                      nodots=True,
+                      colorbar=True,
+                      origin='lower')
         plt.title('Flux between {} and {} A'.format(wave[0], wave[1]))
         plt.savefig(os.path.join(self.plots_folder, 'flux.' + fig_type))
 
@@ -146,23 +274,38 @@ class ppxf_reader:
         self.chi2 = [self.results[i]['chi2'] for i in self.idx_full_list]
         plt.figure(3)
         plt.clf()
-        plot_velfield(self.pix_x, self.pix_y, self.chi2, nodots=True, colorbar=True, origin='lower')
+        plot_velfield(self.pix_x,
+                      self.pix_y,
+                      self.chi2,
+                      nodots=True,
+                      colorbar=True,
+                      origin='lower')
         plt.title('chi2')
         plt.savefig(os.path.join(self.plots_folder, 'chi2.' + fig_type))
 
     def display_sfh(self, fig_type='png'):
 
         self.sfh = np.column_stack([
-            np.sum(
-                self.results[i]['weights'][~self.results[i]['gas_component']].reshape(self.results[i]['reg_dim']),
-                axis=1) for i in self.idx_full_list
+            np.sum(self.results[i]['weights']
+                   [~self.results[i]['gas_component']].reshape(
+                       self.results[i]['reg_dim']),
+                   axis=1) for i in self.idx_full_list
         ])
+        if self.age is None:
+            self.age = self.age_backup
         for i in range(len(self.sfh)):
             plt.figure(i)
             plt.clf()
-            plot_velfield(self.pix_x, self.pix_y, self.sfh[i], nodots=True, colorbar=True, origin='lower')
+            plot_velfield(self.pix_x,
+                          self.pix_y,
+                          self.sfh[i],
+                          nodots=True,
+                          colorbar=True,
+                          origin='lower')
             plt.title('SFR at {} Gyr'.format(self.age[i]))
-            plt.savefig(os.path.join(self.plots_folder, 'sfh_{}.'.format(i) + fig_type))
+            plt.savefig(
+                os.path.join(self.plots_folder,
+                             'sfh_{}_normalised_per_spexel.'.format(i) + fig_type))
 
     def display_gas_flux(self, fig_type='png'):
 
@@ -170,12 +313,12 @@ class ppxf_reader:
             np.concatenate(
                 [self.results[i]['gas_names'] for i in range(len(self.idx))]))
 
-        self.gas_flux = np.zeros((len(self.idx_full_list), len(self.idx)))
+        self.gas_flux = np.zeros((len(self.idx_full_list), len(gas_names)))
 
-        for idx in self.idx_full_list:
+        for i, idx in enumerate(self.idx_full_list):
             for j, gn in enumerate(gas_names):
                 try:
-                    self.gas_flux[idx][j] = self.results[idx]['gas_flux'][
+                    self.gas_flux[i][j] = self.results[idx]['gas_flux'][
                         np.where(self.results[idx]['gas_names'] == gn)]
                 except Exception:
                     pass
@@ -183,6 +326,120 @@ class ppxf_reader:
         for j, gn in enumerate(gas_names):
             plt.figure(j + 100)
             plt.clf()
-            plot_velfield(self.pix_x, self.pix_y, self.gas_flux[:, j], nodots=True, colorbar=True, origin='lower')
+            plot_velfield(self.pix_x,
+                          self.pix_y,
+                          self.gas_flux[:, j],
+                          nodots=True,
+                          colorbar=True,
+                          origin='lower')
             plt.title(gn)
             plt.savefig(os.path.join(self.plots_folder, gn + '.' + fig_type))
+
+    def compute_luminosity(self, z=0.):
+
+        filter_r = sfilters.load_filters('sdss2010-r')
+        filter_V = sfilters.load_filters('bessell-V')
+
+        cosmo = FlatLambdaCDM(H0=70, Om0=0.3)
+        D_L = cosmo.luminosity_distance(z).value * 1e6
+
+        # The is the number of solar luminosity
+        luminosity = {}
+
+        for i, idx in enumerate(self.idx_full_list):
+            luminosity[i] = {}
+            try:
+                mag_r = filter_r.get_ab_magnitudes(
+                    self.results[idx]['flux'] * u.erg /
+                    (u.cm**2 * u.s * u.Angstrom) * 1e-17,
+                    self.results[idx]['wave'] *
+                    u.Angstrom)['sdss2010-r'].value[0]
+                luminosity[i]['r'] = 4. * np.pi * 10.**(
+                    (4.65 - mag_r) / 2.5) * D_L
+            except Exception:
+                luminosity[i]['r'] = 0.
+
+            try:
+                mag_V = filter_V.get_ab_magnitudes(
+                    self.results[idx]['flux'] * u.erg /
+                    (u.cm**2 * u.s * u.Angstrom) * 1e-17,
+                    self.results[idx]['wave'] * u.Angstrom)['bessell-V'].value[0]
+                luminosity[i]['V'] = 4. * np.pi * 10.**(
+                    (4.80 - mag_V) / 2.5) * D_L
+            except Exception:
+                luminosity[i]['V'] = 0.
+
+        self.luminosity = luminosity
+
+    def compute_ml_ratio(self):
+
+        ml_ratio = {}
+
+        for i, idx in enumerate(self.idx_full_list):
+
+            ml_ratio[i] = {}
+
+            try:
+                ml_ratio[i]['r'] = self.mass_to_light(
+                    self.results[idx]['weights']
+                    [~self.results[idx]['gas_component']].reshape(
+                        self.results[idx]['reg_dim']),
+                    band="r",
+                    quiet=True)
+
+            except Exception:
+
+                ml_ratio[i]['r'] = 0.
+
+            # Conversion taken from
+            # http://www.astronomy.ohio-state.edu/~martini/usefuldata.html
+            try:
+                ml_ratio[i]['V'] = self.mass_to_light(
+                    self.results[idx]['weights']
+                    [~self.results[idx]['gas_component']].reshape(
+                        self.results[idx]['reg_dim']),
+                    band="V",
+                    quiet=True) + 0.02
+
+            except Exception:
+
+                ml_ratio[i]['V'] = 0.
+
+        self.ml_ratio = ml_ratio
+
+    def display_sfh_by_mass(self, z=0., fig_type='png'):
+
+        if self.luminosity is None:
+
+            self.compute_luminosity(z=z)
+
+        if self.ml_ratio is None:
+
+            self.compute_ml_ratio()
+
+        if self.sfh is None:
+
+            self.display_sfh()
+
+        for i in range(len(self.sfh)):
+
+            for j, fi in enumerate(self.luminosity[0]):
+
+                sfh_mass = self.sfh[i] * [
+                    self.luminosity[i][fi] for i in range(len(self.luminosity))
+                ] * [self.ml_ratio[i][fi] for i in range(len(self.ml_ratio))]
+
+                plt.figure(i * len(self.ml_ratio) + j)
+                plt.clf()
+                plot_velfield(self.pix_x,
+                              self.pix_y,
+                              sfh_mass,
+                              nodots=True,
+                              colorbar=True,
+                              origin='lower')
+                plt.title('SFR at {} Gyr'.format(self.age[i]))
+                plt.savefig(
+                    os.path.join(
+                        self.plots_folder,
+                        'sfh_{}_by_mass_in_filter_{}.'.format(i, fi) +
+                        fig_type))

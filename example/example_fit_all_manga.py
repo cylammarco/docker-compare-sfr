@@ -1,4 +1,3 @@
-from astropy.io import fits
 import copy
 from matplotlib import pyplot as plt
 import numpy as np
@@ -10,6 +9,11 @@ import ppxf.ppxf_util as util
 import ppxf.miles_util as lib
 
 from manga_reader import manga_reader
+
+
+def manga_flux_to_maggies(flux):
+    return flux * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
+
 
 # SDSS redshift estimate
 z = 0.02894
@@ -24,15 +28,6 @@ if not os.path.exists('/home/sfr/ppxf/{}'.format(foldername)):
 mr = manga_reader(z)
 mr.load_lincube('/home/sfr/example/manga_example_data/{}'.format(filename))
 
-# Save the idx to pix function
-np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_idx_to_pix'.
-        format(foldername), mr._idx_to_pix)
-
-
-def manga_flux_to_maggies(flux):
-    return flux * 1e-17 * 3.33564095E+04 * wave**2. / 3631.
-
-
 # ppxf
 # ppxf
 # ppxf
@@ -43,20 +38,51 @@ def manga_flux_to_maggies(flux):
 # ppxf
 # ppxf
 ##############################################################################
+ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
+miles_pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
+
+# The SDSS wavelengths are in vacuum, while the MILES ones are in air.
+# For a rigorous treatment, the SDSS vacuum wavelengths should be
+# converted into air wavelengths and the spectra should be resampled.
+# To avoid resampling, given that the wavelength dependence of the
+# correction is very weak, I approximate it with a constant factor.
+#
+wave = copy.deepcopy(mr.wave)
+mask = (wave > 3540.) & (wave < 7400.)
+wave *= np.median(util.vac_to_air(wave) / wave)
+
+# The velocity step was already chosen by the SDSS pipeline
+# and we convert it below to km/s
+#
+_, _, velscale = util.log_rebin(np.array([wave[0], wave[-1]]), wave)
+# eq.(8) of Cappellari (2017)
+velscale = c * np.log(wave[1] / wave[0])
+# SDSS has an approximate instrumental resolution FWHM of 2.76A.
+FWHM_gal = mr.rfwhm
+
+#------------------- Setup templates -----------------------
+
+# The templates are not normalized.
+# In this way the weights and mean values are mass-weighted quantities.
+# Use the keyword 'norm_range' for light-weighted quantities.
+miles = lib.miles(miles_pathname, velscale, FWHM_gal)
+
+# Save the idx to pix function
+np.save(
+    '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_idx_to_pix'.format(foldername),
+    mr._idx_to_pix)
+# Save the miles model
+np.save(
+    '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_miles_model'.format(foldername),
+    miles)
 
 tie_balmer = True
 limit_doublets = True
 
-ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-
 for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
 
-    print(i)
-    if i < 498:
-        continue
-
-    # Only use the wavelength range in common between galaxy and stellar library.
-    #
+    # Only use the wavelength range in common between galaxy and
+    # stellar library.
     mask = (wave > 3540.) & (wave < 7400.) & (flux > 0)
 
     wave = wave[mask]
@@ -86,30 +112,6 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
 
     noise[~np.isfinite(noise)] = max(noise[np.isfinite(noise)])
 
-    # The SDSS wavelengths are in vacuum, while the MILES ones are in air.
-    # For a rigorous treatment, the SDSS vacuum wavelengths should be
-    # converted into air wavelengths and the spectra should be resampled.
-    # To avoid resampling, given that the wavelength dependence of the
-    # correction is very weak, I approximate it with a constant factor.
-    #
-    wave *= np.median(util.vac_to_air(wave) / wave)
-
-    # The velocity step was already chosen by the SDSS pipeline
-    # and we convert it below to km/s
-    #
-    _, _, velscale = util.log_rebin(np.array([wave[0], wave[-1]]), galaxy)
-    #velscale = c * np.log(wave[1] / wave[0])  # eq.(8) of Cappellari (2017)
-    FWHM_gal = mr.rfwhm  # SDSS has an approximate instrumental resolution FWHM of 2.76A.
-
-    #------------------- Setup templates -----------------------
-
-    pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
-
-    # The templates are not normalized.
-    # In this way the weights and mean values are mass-weighted quantities.
-    # Use the keyword 'norm_range' for light-weighted quantities.
-    miles = lib.miles(pathname, velscale, FWHM_gal)
-
     # The stellar templates are reshaped below into a 2-dim array with each
     # spectrum as a column, however we save the original array dimensions,
     # which are needed to specify the regularization dimensions
@@ -124,8 +126,9 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     lam_range_gal = np.array([np.min(wave), np.max(wave)]) / (1 + z)
 
     # Construct a set of Gaussian emission line templates.
-    # The `emission_lines` function defines the most common lines, but additional
-    # lines can be included by editing the function in the file ppxf_util.py.
+    # The `emission_lines` function defines the most common lines, but
+    # additional lines can be included by editing the function in the
+    # file ppxf_util.py.
     gas_templates, gas_names, line_wave = util.emission_lines(
         miles.log_lam_temp,
         lam_range_gal,
@@ -141,14 +144,15 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
 
     #-----------------------------------------------------------
 
-    # The galaxy and the template spectra do not have the same starting wavelength.
-    # For this reason an extra velocity shift DV has to be applied to the template
-    # to fit the galaxy spectrum. We remove this artificial shift by using the
-    # keyword VSYST in the call to PPXF below, so that all velocities are
-    # measured with respect to DV. This assume the redshift is negligible.
-    # In the case of a high-redshift galaxy one should de-redshift its
-    # wavelength to the rest frame before using the line below as described
-    # in ppxf_example_kinematics_sauron.py and Sec.2.4 of Cappellari (2017)
+    # The galaxy and the template spectra do not have the same starting
+    # wavelength. For this reason an extra velocity shift DV has to be
+    # applied to the template to fit the galaxy spectrum. We remove this
+    # artificial shift by using the keyword VSYST in the call to PPXF below,
+    # so that all velocities are measured with respect to DV. This assume the
+    # redshift is negligible. In the case of a high-redshift galaxy one
+    # should de-redshift its wavelength to the rest frame before using the
+    # line below as described in ppxf_example_kinematics_sauron.py and
+    # Sec.2.4 of Cappellari (2017)
     #
     dv = c * (miles.log_lam_temp[0] - np.log(wave[0])
               )  # eq.(8) of Cappellari (2017)
@@ -156,8 +160,8 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     start = [vel, 180.]  # (km/s), starting guess for [V, sigma]
 
     n_temps = stars_templates.shape[1]
-    n_forbidden = np.sum(["[" in a
-                          for a in gas_names])  # forbidden lines contain "[*]"
+    # forbidden lines contain "[*]"
+    n_forbidden = np.sum(["[" in a for a in gas_names])
     n_balmer = len(gas_names) - n_forbidden
 
     # Assign component=0 to the stellar templates, component=1 to the Balmer
@@ -174,18 +178,20 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     start = [start, start, start]
 
     # If the Balmer lines are tied one should allow for gas reddeining.
-    # The gas_reddening can be different from the stellar one, if both are fitted.
+    # The gas_reddening can be different from the stellar one, if both are
+    # fitted.
     gas_reddening = 0 if tie_balmer else None
 
     # Here the actual fit starts.
     #
     # IMPORTANT: Ideally one would like not to use any polynomial in the fit
-    # as the continuum shape contains important information on the population.
-    # Unfortunately this is often not feasible, due to small calibration
-    # uncertainties in the spectral shape. To avoid affecting the line strength of
-    # the spectral features, we exclude additive polynomials (degree=-1) and only use
-    # multiplicative ones (mdegree=10). This is only recommended for population, not
-    # for kinematic extraction, where additive polynomials are always recommended.
+    # as the continuum shape contains important information on the
+    # population. Unfortunately this is often not feasible, due to small
+    # calibration uncertainties in the spectral shape. To avoid affecting the
+    # line strength of the spectral features, we exclude additive
+    # polynomials (degree=-1) and only use multiplicative ones (mdegree=10).
+    # This is only recommended for population, not for kinematic extraction,
+    # where additive polynomials are always recommended.
     #
     try:
         pp = ppxf(templates,
@@ -218,10 +224,8 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
             format(foldername, i))
         continue
 
-    np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}'.
-        format(foldername, i), pp)
-    np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}_miles_model'.
-        format(foldername, i), miles)
+    np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}'.format(foldername, i),
+            pp)
 
     # When the two Delta Chi^2 below are the same, the solution
     # is the smoothest consistent with the observed spectrum.

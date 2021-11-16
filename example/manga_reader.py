@@ -49,8 +49,8 @@ class manga_reader:
         self.binid = self.lincube_data['binid'].data[0]
         self.unique_id = np.unique(self.binid)
         self.unique_id = self.unique_id[self.unique_id >= 0]
-        self.flux = self.lincube_data['flux'].data
-        self.flux_err = np.sqrt(1. / self.lincube_data['ivar'].data)
+        self.flux = self.lincube_data['flux'].data * 1e-17
+        self.flux_err = np.sqrt(1. / self.lincube_data['ivar'].data) * 1e-17
         self.wave = self.lincube_data['wave'].data
 
         self._get_metadata(self.lincube_header, self.lincube_flux_header)
@@ -64,8 +64,8 @@ class manga_reader:
         self.binid = self.logcube_data['binid'].data[0]
         self.unique_id = np.unique(self.binid)
         self.unique_id = self.unique_id[self.unique_id >= 0]
-        self.flux = 10.**self.logcube_data['flux'].data
-        self.flux_err = np.sqrt(1. / 10.**self.logcube_data['ivar'].data)
+        self.flux = 10.**self.logcube_data['flux'].data * 1e-17
+        self.flux_err = np.sqrt(1. / 10.**self.logcube_data['ivar'].data) * 1e-17
         self.wave = self.logcube_data['wave'].data
 
         self._get_metadata(self.logcube_header, self.logcube_flux_header)
