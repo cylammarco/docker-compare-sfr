@@ -1,3 +1,4 @@
+from astropy import wcs
 from astropy.io import fits
 import itertools
 import numpy as np
@@ -27,6 +28,10 @@ class manga_reader:
             self.dx = header2['PC1_1'] * 3600
             self.dy = header2['PC2_2'] * 3600
 
+        self.wcs = wcs.WCS(header2)
+        self.ra = float(header2['CRVAL1'])
+        self.dec = float(header2['CRVAL2'])
+
         self.ebvgal = float(header['EBVGAL'])
         self.gfwhm = float(header['GFWHM'])
         self.rfwhm = float(header['RFWHM'])
@@ -35,10 +40,15 @@ class manga_reader:
 
         self.xdim, self.ydim = np.shape(self.flux[0])
         self._idx_to_pix = {}
+        self._pix_to_wcs = np.array([['']] * self.xdim * self.ydim, dtype='object').reshape(self.xdim, self.ydim)
 
         for id in self.unique_id:
 
             self._idx_to_pix[id] = np.column_stack(np.where(self.binid == id))
+
+        for (x, y) in itertools.product(range(self.xdim), range(self.ydim)):
+            ra, dec, _ = self.wcs.wcs_pix2world([[x, y, 0]], 0)[0]
+            self._pix_to_wcs[x][y] = np.array((ra, dec))
 
     def load_lincube(self, filename):
 
@@ -46,6 +56,7 @@ class manga_reader:
         self.lincube_header = self.lincube_data[0].header
         self.lincube_flux_header = self.lincube_data['flux'].header
 
+        # ID starts counting from 0
         self.binid = self.lincube_data['binid'].data[0]
         self.unique_id = np.unique(self.binid)
         self.unique_id = self.unique_id[self.unique_id >= 0]
@@ -61,11 +72,13 @@ class manga_reader:
         self.logcube_header = self.logcube_data[0].header
         self.logcube_flux_header = self.logcube_data['flux'].header
 
+        # ID starts counting from 0
         self.binid = self.logcube_data['binid'].data[0]
         self.unique_id = np.unique(self.binid)
         self.unique_id = self.unique_id[self.unique_id >= 0]
         self.flux = 10.**self.logcube_data['flux'].data * 1e-17
-        self.flux_err = np.sqrt(1. / 10.**self.logcube_data['ivar'].data) * 1e-17
+        self.flux_err = np.sqrt(
+            1. / 10.**self.logcube_data['ivar'].data) * 1e-17
         self.wave = self.logcube_data['wave'].data
 
         self._get_metadata(self.logcube_header, self.logcube_flux_header)
@@ -122,7 +135,7 @@ class manga_reader:
 
     def idx_to_pix(self, idx):
         '''
-        idx starts from 1.
+        idx starts from 0.
         '''
         return self._idx_to_pix[idx]
 
@@ -131,6 +144,12 @@ class manga_reader:
         pixel position starts from 0.
         '''
         return self.binid[x, y]
+
+    def pix_to_wcs(self, x, y):
+        '''
+        pixel position starts from 0.
+        '''
+        return self._pix_to_wcs[x, y]
 
     def _imshow(self, log, **kwarg):
 

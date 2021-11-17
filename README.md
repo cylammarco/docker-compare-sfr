@@ -12,7 +12,7 @@ docker build -f Dockerfile . -t compare-sfr-image
 ## Create and run a detached container
 
 ```
-docker run -d -it --name compare-sfr-container --mount type=bind,source="$(pwd)"/pipe3d,target=/home/sfr/pipe3d --mount type=bind,source="$(pwd)"/prospector,target=/home/sfr/prospector --mount type=bind,source="$(pwd)"/ppxf,target=/home/sfr/ppxf --mount type=bind,source="$(pwd)"/example,target=/home/sfr/example compare-sfr-image /bin/bash
+docker run -d -it --name compare-sfr-container --mount type=bind,source="$(pwd)"/pipe3d,target=/home/sfr/pipe3d --mount type=bind,source="$(pwd)"/prospector,target=/home/sfr/prospector --mount type=bind,source="$(pwd)"/ppxf,target=/home/sfr/ppxf --mount type=bind,source="$(pwd)"/example,target=/home/sfr/example  --mount type=bind,source="$(pwd)"/shared_folder,target=/home/sfr/shared_folder compare-sfr-image /bin/bash
 ```
 
 ## Enter the container with

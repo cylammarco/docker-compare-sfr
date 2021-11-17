@@ -18,7 +18,7 @@ def manga_flux_to_maggies(flux):
 # SDSS redshift estimate
 z = 0.02894
 c = 299792.458  # speed of light in km/s
-#filename = 'manga-7495-12704-LINCUBE.fits.gz'
+# filename = 'manga-7495-12704-LINCUBE.fits.gz'
 filename = 'manga-7495-12704-LOGCUBE-VOR10-GAU-MILESHC.fits.gz'
 foldername = filename.split('.')[0]
 
@@ -60,7 +60,7 @@ velscale = c * np.log(wave[1] / wave[0])
 # SDSS has an approximate instrumental resolution FWHM of 2.76A.
 FWHM_gal = mr.rfwhm
 
-#------------------- Setup templates -----------------------
+# ------------------- Setup templates -----------------------
 
 # The templates are not normalized.
 # In this way the weights and mean values are mass-weighted quantities.
@@ -71,10 +71,26 @@ miles = lib.miles(miles_pathname, velscale, FWHM_gal)
 np.save(
     '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_idx_to_pix'.format(foldername),
     mr._idx_to_pix)
+# Save the idx to equatorial coordinate function
+np.save(
+    '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_pix_to_wcs'.format(foldername),
+    mr._pix_to_wcs)
 # Save the miles model
 np.save(
     '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_miles_model'.format(foldername),
     miles)
+
+if not os.path.exists('/home/sfr/ppxf/{}/npy'.format(foldername)):
+    os.mkdir('/home/sfr/ppxf/{}/npy'.format(foldername))
+
+if not os.path.exists('/home/sfr/ppxf/{}/sfr'.format(foldername)):
+    os.mkdir('/home/sfr/ppxf/{}/sfr'.format(foldername))
+
+if not os.path.exists('/home/sfr/ppxf/{}/fitted_model'.format(foldername)):
+    os.mkdir('/home/sfr/ppxf/{}/fitted_model'.format(foldername))
+
+if not os.path.exists('/home/sfr/ppxf/{}/age_metallicity'.format(foldername)):
+    os.mkdir('/home/sfr/ppxf/{}/age_metallicity'.format(foldername))
 
 tie_balmer = True
 limit_doublets = True
@@ -142,7 +158,7 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     #
     templates = np.column_stack([stars_templates, gas_templates])
 
-    #-----------------------------------------------------------
+    # -----------------------------------------------------------
 
     # The galaxy and the template spectra do not have the same starting
     # wavelength. For this reason an extra velocity shift DV has to be
@@ -224,7 +240,7 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
             format(foldername, i))
         continue
 
-    np.save('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_{}'.format(foldername, i),
+    np.save('/home/sfr/ppxf/{}/npy/manga_7495_12704_ppxf_{}'.format(foldername, i),
             pp)
 
     # When the two Delta Chi^2 below are the same, the solution
@@ -238,17 +254,15 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     weights = weights.reshape(reg_dim) / weights.sum()  # Normalized
     sfr = np.sum(weights, axis=1)
     age = miles.age_grid[:, 0]
+
     plt.figure(figsize=(10, 6))
     plt.clf()
     plt.plot(age, sfr)
     plt.xlabel('Lookback Time / Gyr')
     plt.ylabel('Relative Star Formation Rate')
     plt.tight_layout()
-    plt.savefig('/home/sfr/ppxf/{}/manga_7495_12704_ppxf_sfr_{}.png'.format(
+    plt.savefig('/home/sfr/ppxf/{}/sfr/manga_7495_12704_ppxf_sfr_{}.png'.format(
         foldername, i))
-
-    miles.mean_age_metal(weights)
-    miles.mass_to_light(weights, band="r")
 
     # Plot fit results for stars and gas.
     plt.figure(figsize=(16, 8))
@@ -256,7 +270,7 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     pp.plot()
     plt.tight_layout()
     plt.savefig(
-        '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_fitted_model_{}.png'.format(
+        '/home/sfr/ppxf/{}/fitted_model/manga_7495_12704_ppxf_fitted_model_{}.png'.format(
             foldername, i))
 
     # Plot stellar population mass-fraction distribution
@@ -265,5 +279,5 @@ for i, (wave, flux, flux_err) in enumerate(mr.iterate_data()):
     miles.plot(weights)
     plt.tight_layout()
     plt.savefig(
-        '/home/sfr/ppxf/{}/manga_7495_12704_ppxf_age_metallicity_{}.png'.
+        '/home/sfr/ppxf/{}/age_metallicity/manga_7495_12704_ppxf_age_metallicity_{}.png'.
         format(foldername, i))

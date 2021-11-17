@@ -2,8 +2,8 @@ import os
 import glob
 
 from astropy.cosmology import FlatLambdaCDM
-from matplotlib import pyplot as plt
 import astropy.units as u
+from matplotlib import pyplot as plt
 import numpy as np
 from plotbin.plot_velfield import plot_velfield
 import ppxf as ppxf_package
@@ -15,11 +15,15 @@ class ppxf_reader:
     def __init__(self):
 
         ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-        pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
+        pathname = ppxf_dir +\
+            '/miles_models/Mun1.30*.fits'
 
-        file_vega = ppxf_dir + "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
-        file_sdss = ppxf_dir + "/miles_models/Vazdekis2012_ssp_sdss_miuscat_UN1.30_v9.txt"
-        file1 = ppxf_dir + "/miles_models/Vazdekis2012_ssp_mass_Padova00_UN_baseFe_v10.0.txt"
+        file_vega = ppxf_dir +\
+            "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
+        file_sdss = ppxf_dir +\
+            "/miles_models/Vazdekis2012_ssp_sdss_miuscat_UN1.30_v9.txt"
+        file1 = ppxf_dir +\
+            "/miles_models/Vazdekis2012_ssp_mass_Padova00_UN_baseFe_v10.0.txt"
 
         self.vega_bands = ["U", "B", "V", "R", "I", "J", "H", "K"]
         self.sdss_bands = ["u", "g", "r", "i"]
@@ -31,8 +35,9 @@ class ppxf_reader:
 
         self.slope1, self.MH1, self.Age1, self.m_no_gas = np.loadtxt(
             file1, usecols=[1, 2, 3, 5]).T
-        slope2_vega, MH2_vega, Age2_vega, m_U, m_B, m_V, m_R, m_I, m_J, m_H, m_K = np.loadtxt(
-            file_vega, usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).T
+        slope2_vega, MH2_vega, Age2_vega, m_U, m_B, m_V, m_R, m_I,\
+            m_J, m_H, m_K = np.loadtxt(
+                file_vega, usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).T
         slope2_sdss, MH2_sdss, Age2_sdss, m_u, m_g, m_r, m_i = np.loadtxt(
             file_sdss, usecols=[1, 2, 3, 4, 5, 6, 7]).T
 
@@ -74,20 +79,35 @@ class ppxf_reader:
 
         This procedure uses the photometric predictions
         from Vazdekis+12 and Ricciardelli+12
+
         http://adsabs.harvard.edu/abs/2012MNRAS.424..157V
         http://adsabs.harvard.edu/abs/2012MNRAS.424..172R
-        they were downloaded in December 2016 below and are included in pPXF with permission
-        http://www.iac.es/proyecto/miles/pages/photometric-predictions/based-on-miuscat-seds.php
 
-        :param weights: pPXF output with dimensions weights[miles.n_ages, miles.n_metal]
-        :param band: possible choices are "U", "B", "V", "R", "I", "J", "H", "K" for
-            the Vega photometric system and "u", "g", "r", "i" for the SDSS AB system.
-        :param quiet: set to True to suppress the printed output.
-        :return: mass_to_light in the given band
+        they were downloaded in December 2016 below and are included in pPXF
+        with permission
+
+        http://www.iac.es/proyecto/miles/pages/photometric-predictions/
+            based-on-miuscat-seds.php
+
+        Parameters
+        ----------
+        weights:
+            pPXF output with dimensions weights[miles.n_ages, miles.n_metal]
+        band:
+            possible choices are "U", "B", "V", "R", "I", "J", "H", "K" for
+            the Vega photometric system and "u", "g", "r", "i" for the SDSS
+            AB system.
+        quiet:
+            set to True to suppress the printed output.
+
+        Returns
+        -------
+        mass_to_light (float) in the given band
 
         """
-        assert self.miles.age_grid.shape == self.miles.metal_grid.shape == weights.shape, \
-            "Input weight dimensions do not match"
+
+        assert self.miles.age_grid.shape == self.miles.metal_grid.shape ==\
+            weights.shape, "Input weight dimensions do not match"
 
         if band in self.vega_bands:
             k = self.vega_bands.index(band)
@@ -113,14 +133,14 @@ class ppxf_reader:
         lum_grid = np.empty_like(weights)
         for j in range(self.miles.n_ages):
             for k in range(self.miles.n_metal):
-                p1 = (np.abs(self.miles.age_grid[j, k] - self.Age1) < 0.001) & \
-                        (np.abs(self.miles.metal_grid[j, k] - self.MH1) < 0.01) & \
-                        (np.abs(1.30 - self.slope1) < 0.01)
+                p1 = (np.abs(self.miles.age_grid[j, k] - self.Age1) <
+                      0.001) & (np.abs(self.miles.metal_grid[j, k] - self.MH1)
+                                < 0.01) & (np.abs(1.30 - self.slope1) < 0.01)
                 mass_no_gas_grid[j, k] = self.m_no_gas[p1]
 
-                p2 = (np.abs(self.miles.age_grid[j, k] - Age2) < 0.001) & \
-                        (np.abs(self.miles.metal_grid[j, k] - MH2) < 0.01) & \
-                        (np.abs(1.30 - slope2) < 0.01)
+                p2 = (np.abs(self.miles.age_grid[j, k] - Age2) <
+                      0.001) & (np.abs(self.miles.metal_grid[j, k] - MH2) <
+                                0.01) & (np.abs(1.30 - slope2) < 0.01)
                 lum_grid[j, k] = 10**(-0.4 * (mag[p2] - sun_mag))
 
         # This is eq.(2) in Cappellari+13
@@ -194,35 +214,79 @@ class ppxf_reader:
                 os.path.join(self.ppxf_output_folder, filename))
             self.results[idx] = {}
             self.results[idx]['pix'] = pix
+            self.results[idx]['npix'] = ppxf_output.npix
             self.results[idx]['flux'] = ppxf_output.galaxy
             self.results[idx]['flux_err'] = ppxf_output.noise
+            self.results[idx]['clean'] = ppxf_output.clean
+            self.results[idx]['fraction'] = ppxf_output.fraction
+            self.results[idx]['ftol'] = ppxf_output.ftol
+            self.results[idx]['degree'] = ppxf_output.degree
+            self.results[idx]['mdegree'] = ppxf_output.mdegree
+            self.results[idx]['method'] = ppxf_output.method
+            self.results[idx]['sky'] = ppxf_output.sky
             self.results[idx]['vsyst'] = ppxf_output.vsyst
             self.results[idx]['regul'] = ppxf_output.regul
             self.results[idx]['wave'] = ppxf_output.lam
+            self.results[idx]['nfev'] = ppxf_output.nfev
+            self.results[idx]['reddening'] = ppxf_output.reddening
             self.results[idx]['reg_dim'] = ppxf_output.reg_dim
+            self.results[idx]['reg_ord'] = ppxf_output.reg_ord
             self.results[idx]['templates'] = ppxf_output.templates
+            self.results[idx]['npix_temp'] = ppxf_output.npix_temp
+            self.results[idx]['ntemp'] = ppxf_output.ntemp
+            self.results[idx]['sigma_diff'] = ppxf_output.sigma_diff
+            self.results[idx]['status'] = ppxf_output.status
             self.results[idx]['velscale'] = ppxf_output.velscale
-            self.results[idx]['component'] = ppxf_output.component
-            self.results[idx]['gas_bestfit'] = ppxf_output.gas_bestfit
+            self.results[idx]['velscale_ratio'] = ppxf_output.velscale_ratio
+            self.results[idx]['tied'] = ppxf_output.tied
             self.results[idx]['gas_flux'] = ppxf_output.gas_flux
             self.results[idx]['gas_flux_error'] = ppxf_output.gas_flux_error
+            self.results[idx]['gas_bestfit'] = ppxf_output.gas_bestfit
             self.results[idx]['gas_mpoly'] = ppxf_output.gas_mpoly
             self.results[idx]['gas_reddening'] = ppxf_output.gas_reddening
             self.results[idx]['gas_component'] = ppxf_output.gas_component
             self.results[idx]['gas_names'] = ppxf_output.gas_names
             self.results[idx]['gas_any'] = ppxf_output.gas_any
-            self.results[idx]['matrix'] = ppxf_output.matrix
-            self.results[idx]['mpoly'] = ppxf_output.mpoly
-            self.results[idx]['mpolyweights'] = ppxf_output.mpolyweights
-            self.results[idx]['polyweights'] = ppxf_output.polyweights
-            self.results[idx]['reddening'] = ppxf_output.reddening
+            self.results[idx]['gas_any_zero'] = ppxf_output.gas_any_zero
+            self.results[idx][
+                'gas_zero_template'] = ppxf_output.gas_zero_template
+            self.results[idx]['linear_method'] = ppxf_output.linear_method
+            self.results[idx]['x0'] = ppxf_output.x0
+            self.results[idx]['reddening_func'] = ppxf_output.reddening_func
+            self.results[idx]['polyval'] = ppxf_output.polyval
+            self.results[idx]['polyvander'] = ppxf_output.polyvander
+            self.results[idx]['component'] = ppxf_output.component
             self.results[idx]['ncomp'] = ppxf_output.ncomp
+            self.results[idx]['fixall'] = ppxf_output.fixall
+            self.results[idx]['moments'] = ppxf_output.moments
+            self.results[idx]['goodpixels'] = ppxf_output.goodpixels
+            self.results[idx]['bias'] = ppxf_output.bias
+            self.results[idx]['nsky'] = ppxf_output.nsky
+            self.results[idx]['ngh'] = ppxf_output.ngh
+            self.results[idx]['npars'] = ppxf_output.npars
+            self.results[idx]['A_eq_templ'] = ppxf_output.A_eq_templ
+            self.results[idx]['b_eq_templ'] = ppxf_output.b_eq_templ
+            self.results[idx]['A_ineq_templ'] = ppxf_output.A_ineq_templ
+            self.results[idx]['b_ineq_templ'] = ppxf_output.b_ineq_templ
+            self.results[idx]['A_ineq_kinem'] = ppxf_output.A_ineq_kinem
+            self.results[idx]['b_ineq_kinem'] = ppxf_output.b_ineq_kinem
+            self.results[idx]['A_eq_kinem'] = ppxf_output.A_eq_kinem
+            self.results[idx]['b_eq_kinem'] = ppxf_output.b_eq_kinem
+            self.results[idx]['npad'] = ppxf_output.npad
+            self.results[idx]['templates_rfft'] = ppxf_output.templates_rfft
             self.results[idx]['weights'] = ppxf_output.weights
             self.results[idx]['bestfit'] = ppxf_output.bestfit
+            self.results[idx]['matrix'] = ppxf_output.matrix
+            self.results[idx]['mpoly'] = ppxf_output.mpoly
+            self.results[idx]['gas_mpoly'] = ppxf_output.gas_mpoly
+            self.results[idx]['njev'] = ppxf_output.njev
             self.results[idx]['ndof'] = ppxf_output.ndof
             self.results[idx]['chi2'] = ppxf_output.chi2
             self.results[idx]['sol'] = ppxf_output.sol
             self.results[idx]['error'] = ppxf_output.error
+            self.results[idx]['mpolyweights'] = ppxf_output.mpolyweights
+            self.results[idx]['polyweights'] = ppxf_output.polyweights
+            self.results[idx]['apoly'] = ppxf_output.apoly
 
             for j in range(np.shape(pix)[0]):
                 idx_full_list.append(idx)
@@ -304,8 +368,9 @@ class ppxf_reader:
                           origin='lower')
             plt.title('SFR at {} Gyr'.format(self.age[i]))
             plt.savefig(
-                os.path.join(self.plots_folder,
-                             'sfh_{}_normalised_per_spexel.'.format(i) + fig_type))
+                os.path.join(
+                    self.plots_folder,
+                    'sfh_{}_normalised_per_spexel.'.format(i) + fig_type))
 
     def display_gas_flux(self, fig_type='png'):
 
@@ -363,7 +428,8 @@ class ppxf_reader:
                 mag_V = filter_V.get_ab_magnitudes(
                     self.results[idx]['flux'] * u.erg /
                     (u.cm**2 * u.s * u.Angstrom) * 1e-17,
-                    self.results[idx]['wave'] * u.Angstrom)['bessell-V'].value[0]
+                    self.results[idx]['wave'] *
+                    u.Angstrom)['bessell-V'].value[0]
                 luminosity[i]['V'] = 4. * np.pi * 10.**(
                     (4.80 - mag_V) / 2.5) * D_L
             except Exception:

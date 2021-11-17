@@ -1,5 +1,4 @@
 from ppxf_reader import ppxf_reader
-from matplotlib import pyplot as plt
 
 pr = ppxf_reader()
 pr.load('../ppxf/manga-7495-12704-LOGCUBE-VOR10-GAU-MILESHC', verbose=False)

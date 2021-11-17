@@ -18,7 +18,7 @@ ENV SPS_HOME="/home/sfr/git/fsps"
 RUN git clone --depth 1 https://github.com/cconroy20/fsps.git $SPS_HOME
 
 # Install python software
-RUN pip3 install scipy~=1.7 numpy~=1.21 matplotlib~=3.4 dynesty~=1.1 emcee~=3.1 astro-sedpy~=0.2 corner~=2.2 fsps
+RUN pip3 install scipy~=1.7 numpy~=1.21 matplotlib~=3.4 dynesty~=1.1 emcee~=3.1 astro-sedpy~=0.2 corner~=2.2 fsps astropy speclite pyparsing~=2.4
 RUN ln -s $(which python3.8) /usr/bin/python
 
 # Compile TLUSTY and SYNSPEC
@@ -43,5 +43,6 @@ RUN mkdir pipe3d
 RUN mkdir prospector
 RUN mkdir ppxf
 RUN mkdir example
+RUN mkdir shared_folder
 
 COPY run_all_examples.sh .
