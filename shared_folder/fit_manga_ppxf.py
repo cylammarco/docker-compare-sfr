@@ -56,7 +56,7 @@ wave *= np.median(util.vac_to_air(wave) / wave)
 #
 _, _, velscale = util.log_rebin(np.array([wave[0], wave[-1]]), wave)
 # eq.(8) of Cappellari (2017)
-velscale = c * np.log(wave[1] / wave[0])
+# velscale = c * np.log(wave[1] / wave[0])
 # SDSS has an approximate instrumental resolution FWHM of 2.76A.
 FWHM_gal = mr.rfwhm
 
