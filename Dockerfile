@@ -44,5 +44,6 @@ RUN mkdir prospector
 RUN mkdir ppxf
 RUN mkdir example
 RUN mkdir shared_folder
+RUN mkdir synthetic_spectra
 
 COPY run_all_examples.sh .
