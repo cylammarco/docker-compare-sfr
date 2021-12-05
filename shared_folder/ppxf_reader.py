@@ -192,16 +192,25 @@ class ppxf_reader:
             self.ppxf_output_folder,
             'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
             '_ppxf_idx_to_pix.npy')
+        self.pix_to_wcs_path = os.path.join(
+            self.ppxf_output_folder,
+            'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
+            '_ppxf_pix_to_wcs.npy')
         self.miles_model_path = os.path.join(
             self.ppxf_output_folder,
             'manga_' + '_'.join(self.folder_name.split('-')[1:3]) +
             '_ppxf_miles_model.npy')
+
         self.idx_to_pix = np.load(self.idx_to_pix_path,
                                   allow_pickle=True).item()
+        self.pix_to_wcs = np.load(self.pix_to_wcs_path,
+                                  allow_pickle=True)
 
         idx_full_list = []
         pix_x = []
         pix_y = []
+        pix_ra = []
+        pix_dec = []
         self.results = {}
         self.filelist = glob.glob(
             os.path.join(self.ppxf_npy_folder, '*[0-9].npy'))
@@ -231,7 +240,8 @@ class ppxf_reader:
             self.results[idx]['reddening'] = ppxf_output.reddening
             self.results[idx]['reg_dim'] = ppxf_output.reg_dim
             self.results[idx]['reg_ord'] = ppxf_output.reg_ord
-            self.results[idx]['templates'] = ppxf_output.templates
+            #taking up too much memory
+            #self.results[idx]['templates'] = ppxf_output.templates
             self.results[idx]['npix_temp'] = ppxf_output.npix_temp
             self.results[idx]['ntemp'] = ppxf_output.ntemp
             self.results[idx]['sigma_diff'] = ppxf_output.sigma_diff
@@ -273,7 +283,7 @@ class ppxf_reader:
             self.results[idx]['A_eq_kinem'] = ppxf_output.A_eq_kinem
             self.results[idx]['b_eq_kinem'] = ppxf_output.b_eq_kinem
             self.results[idx]['npad'] = ppxf_output.npad
-            self.results[idx]['templates_rfft'] = ppxf_output.templates_rfft
+            #self.results[idx]['templates_rfft'] = ppxf_output.templates_rfft
             self.results[idx]['weights'] = ppxf_output.weights
             self.results[idx]['bestfit'] = ppxf_output.bestfit
             self.results[idx]['matrix'] = ppxf_output.matrix
@@ -292,11 +302,16 @@ class ppxf_reader:
                 idx_full_list.append(idx)
                 pix_x.append(pix[j][0])
                 pix_y.append(pix[j][1])
+                ra, dec = self.pix_to_wcs[pix[j][0], pix[j][1]]
+                pix_ra.append(ra)
+                pix_dec.append(dec)
 
         self.idx = self.results.keys()
         self.idx_full_list = np.array(idx_full_list)
         self.pix_x = np.array(pix_x)
         self.pix_y = np.array(pix_y)
+        self.pix_ra = np.array(pix_ra)
+        self.pix_dec = np.array(pix_dec)
 
     def display_velscale(self, fig_type='png'):
 
@@ -305,13 +320,16 @@ class ppxf_reader:
         ]
         plt.figure(1)
         plt.clf()
-        plot_velfield(self.pix_x,
-                      self.pix_y,
+        plot_velfield(self.pix_ra,
+                      self.pix_dec,
                       self.velscale,
                       nodots=True,
                       colorbar=True,
                       origin='lower')
         plt.title('velscale')
+        ax = plt.gca()
+        ax.invert_xaxis()
+        plt.tight_layout()
         plt.savefig(os.path.join(self.plots_folder, 'velscale.' + fig_type))
 
     def display_flux(self, wave=[6553, 6573], fig_type='png'):
@@ -324,13 +342,16 @@ class ppxf_reader:
         ]
         plt.figure(2)
         plt.clf()
-        plot_velfield(self.pix_x,
-                      self.pix_y,
+        plot_velfield(self.pix_ra,
+                      self.pix_dec,
                       self.flux,
                       nodots=True,
                       colorbar=True,
                       origin='lower')
         plt.title('Flux between {} and {} A'.format(wave[0], wave[1]))
+        ax = plt.gca()
+        ax.invert_xaxis()
+        plt.tight_layout()
         plt.savefig(os.path.join(self.plots_folder, 'flux.' + fig_type))
 
     def display_chi2(self, fig_type='png'):
@@ -338,13 +359,16 @@ class ppxf_reader:
         self.chi2 = [self.results[i]['chi2'] for i in self.idx_full_list]
         plt.figure(3)
         plt.clf()
-        plot_velfield(self.pix_x,
-                      self.pix_y,
+        plot_velfield(self.pix_ra,
+                      self.pix_dec,
                       self.chi2,
                       nodots=True,
                       colorbar=True,
                       origin='lower')
         plt.title('chi2')
+        ax = plt.gca()
+        ax.invert_xaxis()
+        plt.tight_layout()
         plt.savefig(os.path.join(self.plots_folder, 'chi2.' + fig_type))
 
     def display_sfh(self, fig_type='png'):
@@ -360,13 +384,16 @@ class ppxf_reader:
         for i in range(len(self.sfh)):
             plt.figure(i)
             plt.clf()
-            plot_velfield(self.pix_x,
-                          self.pix_y,
+            plot_velfield(self.pix_ra,
+                          self.pix_dec,
                           self.sfh[i],
                           nodots=True,
                           colorbar=True,
                           origin='lower')
             plt.title('SFR at {} Gyr'.format(self.age[i]))
+            ax = plt.gca()
+            ax.invert_xaxis()
+            plt.tight_layout()
             plt.savefig(
                 os.path.join(
                     self.plots_folder,
@@ -388,16 +415,21 @@ class ppxf_reader:
                 except Exception:
                     pass
 
+        self.gas_flux[~np.isfinite(self.gas_flux)] = 0.0
+
         for j, gn in enumerate(gas_names):
             plt.figure(j + 100)
             plt.clf()
-            plot_velfield(self.pix_x,
-                          self.pix_y,
+            plot_velfield(self.pix_ra,
+                          self.pix_dec,
                           self.gas_flux[:, j],
                           nodots=True,
                           colorbar=True,
                           origin='lower')
             plt.title(gn)
+            ax = plt.gca()
+            ax.invert_xaxis()
+            plt.tight_layout()
             plt.savefig(os.path.join(self.plots_folder, gn + '.' + fig_type))
 
     def compute_luminosity(self, z=0.):
@@ -497,13 +529,16 @@ class ppxf_reader:
 
                 plt.figure(i * len(self.ml_ratio) + j)
                 plt.clf()
-                plot_velfield(self.pix_x,
-                              self.pix_y,
+                plot_velfield(self.pix_ra,
+                              self.pix_dec,
                               sfh_mass,
                               nodots=True,
                               colorbar=True,
                               origin='lower')
                 plt.title('SFR at {} Gyr'.format(self.age[i]))
+                ax = plt.gca()
+                ax.invert_xaxis()
+                plt.tight_layout()
                 plt.savefig(
                     os.path.join(
                         self.plots_folder,
