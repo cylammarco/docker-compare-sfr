@@ -148,7 +148,7 @@ for sf_type in ['ed30']:
 
             pp = ppxf(templates,
                       galaxy,
-                      np.abs(noise),
+                      noise_scaled,
                       velscale,
                       start,
                       plot=False,
