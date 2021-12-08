@@ -42,7 +42,7 @@ def find_ref(reg_guess, templates, galaxy, noise, velscale, start, plot,
 
 
 ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-miles_pathname = ppxf_dir + '/miles_models/Mun1.30*.fits'
+miles_pathname = ppxf_dir + '/fsps_miles_models/Mun1.30*.fits'
 
 miles_filelist = glob.glob(miles_pathname)
 
