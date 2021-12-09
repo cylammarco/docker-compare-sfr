@@ -27,7 +27,6 @@ for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
     plt.figure(1, figsize=(12, 12))
     plt.clf()
     for age in 10.**np.arange(-2.0, 1.3, 0.1):
-        sp_ed30.params['tburst'] = age
         wave, spec = sp_sb00.get_spectrum(tage=age)
         plt.plot(
             wave,
