@@ -17,7 +17,10 @@ if not os.path.exists(output_folder_pathname):
 
 miles_filelist = glob.glob(miles_pathname)
 
-sp = fsps.StellarPopulation(zcontinuous=1, sfh=0)
+sp = fsps.StellarPopulation(compute_vega_mags=False,
+                            vactoair_flag=True,
+                            zcontinuous=1,
+                            sfh=0)
 
 for i in miles_filelist:
     filename = i.split(os.sep)[-1]
