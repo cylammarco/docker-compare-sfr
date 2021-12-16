@@ -51,7 +51,7 @@ for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
             wave,
             spec,
             label=
-            r'$\tau$ = 3 Gyr, log(Z/Z$_\odot$) ={0:1.1f}, age = {1:2.2f} Gyr'.
+            r'$\tau$ = 1 Gyr, log(Z/Z$_\odot$) ={0:1.1f}, age = {1:2.2f} Gyr'.
             format(z, age))
         np.save(
             'synthetic_spectra/sp_ed10_z{0:1.1f}_t{1:06d}'.format(
@@ -62,4 +62,4 @@ for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
     plt.grid()
     plt.legend()
     plt.tight_layout()
-    plt.savefig('synthetic_spectra/ed30_z{0:1.1f}.png'.format(z))
+    plt.savefig('synthetic_spectra/ed10_z{0:1.1f}.png'.format(z))
