@@ -78,7 +78,7 @@ component = [0] * n_temps
 
 # Fit (V, sig, h3, h4) moments=4 for the stars
 # and (V, sig) moments=2 for the two gas kinematic components
-moments = 4
+moments = 2
 
 if not os.path.exists('../synthetic_spectra/sfr'):
     os.mkdir('../synthetic_spectra/sfr')
@@ -89,14 +89,14 @@ if not os.path.exists('../synthetic_spectra/fitted_model'):
 if not os.path.exists('../synthetic_spectra/age_metallicity'):
     os.mkdir('../synthetic_spectra/age_metallicity')
 
-degree = 10
-mdegree = 4
+degree = -1
+mdegree = -1
 
 for sf_type in ['ed30']:
 
     for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
 
-        for t in 10.**np.arange(-2.0, 1.3, 0.1):
+        for t in 10.**np.arange(-1.3, 1.3, 0.1):
             # Star burst
             wave, galaxy = np.load(
                 '../synthetic_spectra/sp_{0}_z{1:1.1f}_t{2:06d}.npy'.format(
@@ -172,13 +172,16 @@ for sf_type in ['ed30']:
             sfr = np.sum(weights, axis=1)
             age = miles.age_grid[:, 0]
 
-            if (sf_type=='sb00'):
+            if (sf_type == 'sb00'):
                 age_input = [min(age), t, t, t, max(age)]
                 sfr_input = [0, 0, max(sfr), 0, 0]
             else:
-                age_input = 1.0**np.linspace(np.log10(min(age)), np.log10(max(age)), 1000)
+                age_input = 10.0**np.linspace(np.log10(min(age)),
+                                              np.log10(max(age)), 1000)
                 sfr_input = np.zeros_like(age_input)
-                sfr_input[age_input<=t] = np.exp((age_input[age_input<=t]-t)/3.0)
+                sfr_input[age_input <= t] = np.exp(
+                    (age_input[age_input <= t] - t) / 3.0)
+                sfr_input = sfr_input / np.nanmax(sfr_input) * np.nanmax(sfr)
 
             plt.figure(1, figsize=(10, 6))
             plt.clf()
