@@ -68,7 +68,7 @@ templates = miles.templates.reshape(miles.templates.shape[0], -1)
 # eq.(8) of Cappellari (2017)
 vel = c * np.log(1 + z)
 # (km/s), starting guess for [V, sigma]
-start = [vel, 10.]
+start = [vel, 1.0]
 
 n_temps = templates.shape[1]
 
@@ -92,7 +92,7 @@ if not os.path.exists('../synthetic_spectra/age_metallicity'):
 degree = -1
 mdegree = -1
 
-for sf_type in ['ed30']:
+for sf_type in ['ed10', 'sb00']:
 
     for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
 
@@ -111,7 +111,7 @@ for sf_type in ['ed30']:
                 velscale=velscale)
             norm_factor = np.nanmedian(galaxy)
             galaxy /= norm_factor
-            noise = np.ones_like(galaxy) * 0.05 * (np.random.random() - 0.5)
+            noise = np.ones_like(galaxy) * 0.01 * (np.random.random() - 0.5)
             galaxy = galaxy + noise
 
             # eq.(8) of Cappellari (2017)
@@ -137,13 +137,13 @@ for sf_type in ['ed30']:
             noise_scaled = np.abs(noise) * np.sqrt(pp.chi2)
 
             results = minimize(find_ref,
-                               1.5,
+                               0.5,
                                args=(templates, galaxy, noise_scaled, velscale,
                                      start, False, moments, degree, mdegree,
                                      False, dv, np.exp(wave), reg_dim,
                                      component, chi2_desired),
                                method='Powell',
-                               options={'ftol': 1e-1})
+                               options={'ftol': 1e0})
             best_reg = 10.**results.x
 
             pp = ppxf(templates,
@@ -194,8 +194,8 @@ for sf_type in ['ed30']:
             plt.legend()
             plt.tight_layout()
             plt.savefig(
-                '../synthetic_spectra/sfr/sp_{0}_z{1:1.1f}_t{2:06d}.png'.
-                format(sf_type, z, int(t * 1000)))
+                '../synthetic_spectra/sfr/sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}.png'.
+                format(sf_type, z, int(t * 1000), best_reg))
 
             # Plot fit results for stars and gas.
             plt.figure(2, figsize=(16, 8))
@@ -203,8 +203,8 @@ for sf_type in ['ed30']:
             pp.plot()
             plt.tight_layout()
             plt.savefig('../synthetic_spectra/fitted_model/'
-                        'sp_{0}_z{1:1.1f}_t{2:06d}_fitted_model.png'.format(
-                            sf_type, z, int(t * 1000)))
+                        'sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}_fitted_model.png'.format(
+                            sf_type, z, int(t * 1000), best_reg))
 
             # Plot stellar population mass-fraction distribution
             plt.figure(3, figsize=(16, 8))
@@ -212,5 +212,5 @@ for sf_type in ['ed30']:
             miles.plot(weights)
             plt.tight_layout()
             plt.savefig('../synthetic_spectra/age_metallicity/'
-                        'sp_{0}_z{1:1.1f}_t{2:06d}_age_metallicity.png'.format(
-                            sf_type, z, int(t * 1000)))
+                        'sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}_age_metallicity.png'.format(
+                            sf_type, z, int(t * 1000), best_reg))

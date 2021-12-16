@@ -89,8 +89,8 @@ if not os.path.exists('../synthetic_spectra/fitted_model'):
 if not os.path.exists('../synthetic_spectra/age_metallicity'):
     os.mkdir('../synthetic_spectra/age_metallicity')
 
-degree = 10
-mdegree = 1
+degree = -1
+mdegree = -1
 
 for miles_spectrum in miles_filelist:
 
@@ -104,7 +104,7 @@ for miles_spectrum in miles_filelist:
         [np.nanmin(wave), np.nanmax(wave)], galaxy, velscale=velscale)
     norm_factor = np.nanmedian(galaxy_rebinned)
     galaxy_rebinned /= norm_factor
-    noise_rebinned = np.ones_like(galaxy_rebinned) * 0.05 * (np.random.random(len(galaxy_rebinned)) - 0.5)
+    noise_rebinned = np.ones_like(galaxy_rebinned) * 0.01 * (np.random.random(len(galaxy_rebinned)) - 0.5)
     galaxy_rebinned = galaxy_rebinned + noise_rebinned
 
     # eq.(8) of Cappellari (2017)
