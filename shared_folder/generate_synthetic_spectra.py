@@ -4,36 +4,29 @@ import numpy as np
 import os
 
 # Star burst
-sp_sb00 = fsps.StellarPopulation(compute_vega_mags=False,
+sp = fsps.StellarPopulation(compute_vega_mags=False,
                                  vactoair_flag=True,
                                  zcontinuous=1,
                                  sfh=0)
-
-# Exponentially decaying SFH with tau=0.5 Gyr
-sp_ed05 = fsps.StellarPopulation(compute_vega_mags=False,
-                                 vactoair_flag=True,
-                                 zcontinuous=1,
-                                 sfh=1,
-                                 tau=0.5)
 
 if not os.path.exists('synthetic_spectra'):
     os.mkdir('synthetic_spectra')
 
 for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
-    sp_sb00.params['logzsol'] = z
-    sp_ed05.params['logzsol'] = z
+    sp.params['logzsol'] = z
+    sp.params['sfh'] = 0
     # Star burst
     plt.figure(1, figsize=(12, 12))
     plt.clf()
     for age in 10.**np.arange(-1.3, 1.3, 0.1):
-        wave, spec = sp_sb00.get_spectrum(tage=age, peraa=True)
+        wave, spec = sp.get_spectrum(tage=age, peraa=True)
         plt.plot(
             wave,
             spec,
             label=r'Star Burst, log(Z/Z$_\odot$) = {0:1.1f}, age = {1:2.2f} Gyr'
             .format(z, age))
         np.save(
-            'synthetic_spectra/sp_sb00_z{0:1.2f}_t{1:2.2f}'.format(
+            'synthetic_spectra/sp_z{0:1.2f}_t{1:2.2f}'.format(
                 z, age), np.column_stack((wave, spec)))
     plt.xlabel('Wavelength (A)')
     plt.ylabel('Flux (erg / s / cm / cm / Hz)')
@@ -45,16 +38,20 @@ for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
     # Exponential
     plt.figure(2, figsize=(12, 12))
     plt.clf()
+
+    sp.params['sfh'] = 1
+    sp.params['tau'] = 0.5
+
     for age in 10.**np.arange(-1.3, 1.3, 0.1):
-        wave, spec = sp_ed05.get_spectrum(tage=age, peraa=True)
+        wave, spec = sp.get_spectrum(tage=age, peraa=True)
         plt.plot(
             wave,
             spec,
             label=
-            r'$\tau$ = 0.5 Gyr, log(Z/Z$_\odot$) = {0:1.2f}, age = {1:2.2f} Gyr'.
-            format(z, age))
+            r'$\tau$ = {0:.1f} Gyr, log(Z/Z$_\odot$) = {1:1.2f}, age = {2:2.2f} Gyr'.
+            format(sp.params['tau'], z, age))
         np.save(
-            'synthetic_spectra/sp_ed05_z{0:1.2f}_t{1:2.2f}'.format(
+            'synthetic_spectra/sp_z{0:1.2f}_t{1:2.2f}'.format(
                 z, age), np.column_stack((wave, spec)))
     plt.xlabel('Wavelength (A)')
     plt.ylabel('Flux (erg / s / cm / cm / Hz)')
