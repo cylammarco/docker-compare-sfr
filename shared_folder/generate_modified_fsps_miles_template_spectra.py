@@ -9,7 +9,7 @@ import fsps
 from spectres import spectres
 
 ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-miles_pathname = ppxf_dir + os.sep + 'miles_models' + os.sep + 'Mun1.30*.fits'
+miles_pathname = ppxf_dir + os.sep + 'miles_models/Mun1.30*.fits'
 output_folder_pathname = ppxf_dir + os.sep + 'fsps_miles_models'
 
 if not os.path.exists(output_folder_pathname):

@@ -13,7 +13,7 @@ from scipy.optimize import minimize
 
 
 def find_ref(reg_guess, templates, galaxy, noise, velscale, start, plot,
-             moments, degree, mdegree, clean, vsyst, lam, reg_dim, component,
+             moments, degree, mdegree, clean, vsyst, fixed, lam, reg_dim, component,
              chi2_desired):
 
     pp = ppxf(templates=templates,
@@ -27,13 +27,14 @@ def find_ref(reg_guess, templates, galaxy, noise, velscale, start, plot,
               mdegree=mdegree,
               clean=clean,
               vsyst=vsyst,
+              fixed=fixed,
               lam=lam,
-              regul=10.**reg_guess,
+              regul=reg_guess,
               reg_dim=reg_dim,
               component=component)
     chi2_current = (pp.chi2 - 1) * galaxy.size
 
-    print('Current regularisation value: %#.8g' % 10.**reg_guess)
+    print('Current regularisation value: %#.8g' % reg_guess)
     print('Desired Delta Chi^2: %#.8g' % chi2_desired)
     print('Current Delta Chi^2: %#.8g' % chi2_current)
 
@@ -52,29 +53,12 @@ z = 0.0
 # MILES has an approximate FWHM resolution of 2.51A.
 FWHM_gal = 2.51
 
-wave, spec = np.load('../synthetic_spectra/sp_sb00_z0.0_t000063.npy').T
-mask = (wave >= 3600.) & (wave <= 7400.)
-wave = wave[mask]
-spec = spec[mask]
 wave_new = np.arange(3620., 7400., 2.)
-spec = spectres(wave_new, wave, spec)
 
 velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
-miles = lib.miles(miles_pathname, velscale, FWHM_gal)
 
-reg_dim = miles.templates.shape[1:]
-templates = miles.templates.reshape(miles.templates.shape[0], -1)
-
-# eq.(8) of Cappellari (2017)
-vel = c * np.log(1 + z)
 # (km/s), starting guess for [V, sigma]
-start = [vel, 1.0]
-
-n_temps = templates.shape[1]
-
-# Assign component=0 to the stellar templates, component=1 to the Balmer
-# gas emission lines templates and component=2 to the forbidden lines.
-component = [0] * n_temps
+start = [0.0, 10.0]
 
 # Fit (V, sig, h3, h4) moments=4 for the stars
 # and (V, sig) moments=2 for the two gas kinematic components
@@ -91,38 +75,50 @@ if not os.path.exists('../synthetic_spectra/age_metallicity'):
 
 degree = -1
 mdegree = -1
+fixed = [1, 1]
 
-for sf_type in ['ed10', 'sb00']:
+for sf_type in ['ed05', 'sb00']:
 
     for z in [-0.5, -0.25, 0.0, 0.25, 0.5]:
 
         for t in 10.**np.arange(-1.3, 1.3, 0.1):
+
             # Star burst
             wave, galaxy = np.load(
-                '../synthetic_spectra/sp_{0}_z{1:1.1f}_t{2:06d}.npy'.format(
-                    sf_type, z, int(t * 1000))).T
-            mask = (wave >= 3600.) & (wave <= 7400.)
-            wave = wave[mask]
-            galaxy = galaxy[mask]
+                '../synthetic_spectra/sp_{0}_z{1:1.2f}_t{2:2.2f}.npy'.format(
+                    sf_type, z, t)).T
             galaxy = spectres(wave_new, wave, galaxy)
-            galaxy, wave, velscale = util.log_rebin(
+
+            galaxy_rebinned, wave_rebinned, velscale_rebinned = util.log_rebin(
                 [np.nanmin(wave_new), np.nanmax(wave_new)],
                 galaxy,
                 velscale=velscale)
-            norm_factor = np.nanmedian(galaxy)
-            galaxy /= norm_factor
-            noise = np.ones_like(galaxy) * 0.01 * (np.random.random() - 0.5)
-            galaxy = galaxy + noise
+
+            norm_factor = np.nanmedian(galaxy_rebinned)
+            galaxy_rebinned /= norm_factor
+            noise = np.ones_like(galaxy_rebinned) * 0.01 * (np.random.random() - 0.5)
+            galaxy_rebinned = galaxy_rebinned + noise
+
+            miles = lib.miles(miles_pathname, velscale_rebinned, FWHM_gal)
+
+            reg_dim = miles.templates.shape[1:]
+            templates = miles.templates.reshape(miles.templates.shape[0], -1)
+
+            n_temps = templates.shape[1]
+
+            # Assign component=0 to the stellar templates, component=1 to the Balmer
+            # gas emission lines templates and component=2 to the forbidden lines.
+            component = [0] * n_temps
 
             # eq.(8) of Cappellari (2017)
-            dv = c * (miles.log_lam_temp[0] - wave[0])
-            # See the pPXF documentation for the keyword REGUL
-            regul_err = np.nanmedian(noise)  # Desired regularization error
-            chi2_desired = np.sqrt(2 * galaxy.size)
+            dv = c * (miles.log_lam_temp[0] - wave_rebinned[0])
+
+            chi2_desired = np.sqrt(2 * galaxy_rebinned.size)
+
             pp = ppxf(templates,
-                      galaxy,
+                      galaxy_rebinned,
                       np.abs(noise),
-                      velscale,
+                      velscale_rebinned,
                       start,
                       plot=False,
                       moments=moments,
@@ -130,26 +126,27 @@ for sf_type in ['ed10', 'sb00']:
                       mdegree=mdegree,
                       clean=False,
                       vsyst=dv,
-                      lam=np.exp(wave),
+                      fixed=fixed,
+                      lam=np.exp(wave_rebinned),
                       regul=0,
                       reg_dim=reg_dim,
                       component=component)
             noise_scaled = np.abs(noise) * np.sqrt(pp.chi2)
 
             results = minimize(find_ref,
-                               0.5,
-                               args=(templates, galaxy, noise_scaled, velscale,
+                               10.,
+                               args=(templates, galaxy_rebinned, noise_scaled, velscale_rebinned,
                                      start, False, moments, degree, mdegree,
-                                     False, dv, np.exp(wave), reg_dim,
+                                     False, dv, fixed, np.exp(wave_rebinned), reg_dim,
                                      component, chi2_desired),
                                method='Powell',
                                options={'ftol': 1e0})
-            best_reg = 10.**results.x
+            best_reg = results.x
 
             pp = ppxf(templates,
-                      galaxy,
+                      galaxy_rebinned,
                       noise_scaled,
-                      velscale,
+                      velscale_rebinned,
                       start,
                       plot=False,
                       moments=moments,
@@ -157,12 +154,13 @@ for sf_type in ['ed10', 'sb00']:
                       mdegree=mdegree,
                       clean=False,
                       vsyst=dv,
-                      lam=np.exp(wave),
+                      fixed=fixed,
+                      lam=np.exp(wave_rebinned),
                       regul=best_reg,
                       reg_dim=reg_dim,
                       component=component)
 
-            chi2_current = (pp.chi2 - 1) * galaxy.size
+            chi2_current = (pp.chi2 - 1) * galaxy_rebinned.size
 
             print('Desired Delta Chi^2: %#.6g' % chi2_desired)
             print('Current Delta Chi^2: %#.6g' % chi2_current)
@@ -194,8 +192,8 @@ for sf_type in ['ed10', 'sb00']:
             plt.legend()
             plt.tight_layout()
             plt.savefig(
-                '../synthetic_spectra/sfr/sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}.png'.
-                format(sf_type, z, int(t * 1000), best_reg))
+                '../synthetic_spectra/sfr/sp_{0}_z{1:1.2f}_t{2:2.2f}_regul{3:.2f}.png'.
+                format(sf_type, z, t, best_reg[0]))
 
             # Plot fit results for stars and gas.
             plt.figure(2, figsize=(16, 8))
@@ -203,8 +201,8 @@ for sf_type in ['ed10', 'sb00']:
             pp.plot()
             plt.tight_layout()
             plt.savefig('../synthetic_spectra/fitted_model/'
-                        'sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}_fitted_model.png'.format(
-                            sf_type, z, int(t * 1000), best_reg))
+                        'sp_{0}_z{1:1.2f}_t{2:2.2f}_regul{3:.2f}_fitted_model.png'.format(
+                            sf_type, z, t, best_reg[0]))
 
             # Plot stellar population mass-fraction distribution
             plt.figure(3, figsize=(16, 8))
@@ -212,5 +210,5 @@ for sf_type in ['ed10', 'sb00']:
             miles.plot(weights)
             plt.tight_layout()
             plt.savefig('../synthetic_spectra/age_metallicity/'
-                        'sp_{0}_z{1:1.1f}_t{2:06d}_regul{3}_age_metallicity.png'.format(
-                            sf_type, z, int(t * 1000), best_reg))
+                        'sp_{0}_z{1:1.2f}_t{2:2.2f}_regul{3:.2f}_age_metallicity.png'.format(
+                            sf_type, z, t, best_reg[0]))
