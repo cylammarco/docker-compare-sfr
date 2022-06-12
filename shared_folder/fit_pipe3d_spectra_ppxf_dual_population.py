@@ -1,7 +1,7 @@
 import os
-import itertools
 
 from astropy import constants
+from astropy.io import fits
 from matplotlib import gridspec
 from matplotlib import pyplot as plt
 import numpy as np
@@ -14,9 +14,7 @@ from scipy import ndimage, signal
 from scipy.optimize import minimize
 
 ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-miles_pathname = ppxf_dir + os.sep + "miles_models" + os.sep + "Eun1.30*.fits"
-
-synthetic_spectrum_dir = ".." + os.sep + "synthetic_spectra"
+miles_pathname = os.path.join(ppxf_dir, "miles_models", "Eun1.30*.fits")
 
 file_vega = (
     ppxf_dir + "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
@@ -213,58 +211,76 @@ z = 0.0
 # MILES has an approximate FWHM resolution of 2.51A.
 FWHM_gal = 2.51
 
-wave_new = np.arange(3620.0, 7400.0, 2.0)
-
-velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
-
 # Fit (V, sig, h3, h4) moments=4 for the stars
 # and (V, sig) moments=2 for the two gas kinematic components
 moments = 4
 
-if not os.path.exists(".." + os.sep + "synthetic_spectra" + os.sep + "sfr"):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "sfr")
+if not os.path.exists(os.path.join("..", "pipe3d_spectra", "sfr")):
+    os.makedirs(os.path.join("..", "pipe3d_spectra", "sfr"))
 
 if not os.path.exists(
-    ".." + os.sep + "synthetic_spectra" + os.sep + "fitted_model"
+    os.path.join("..", "pipe3d_spectra", "fitted_model")
 ):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "fitted_model")
+    os.makedirs(os.path.join("..", "pipe3d_spectra", "fitted_model"))
 
 if not os.path.exists(
-    ".." + os.sep + "synthetic_spectra" + os.sep + "age_metallicity"
+    os.path.join("..", "pipe3d_spectra", "age_metallicity")
 ):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "age_metallicity")
+    os.makedirs(os.path.join("..", "pipe3d_spectra", "age_metallicity"))
 
-if not os.path.exists(".." + os.sep + "synthetic_spectra" + os.sep + "figure"):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "figure")
+if not os.path.exists(os.path.join("..", "pipe3d_spectra", "figure")):
+    os.makedirs(os.path.join("..", "pipe3d_spectra", "figure"))
 
 factor = 10  # Oversampling integer factor for an accurate convolution
 h3 = 0.1  # Adopted G-H parameters of the LOSVD
 h4 = 0.1
-sn = 30.0  # Adopted S/N of the Monte Carlo simulation
-m = 100  # Number of realizations of the simulation
+sn = 50.0  # Adopted S/N of the Monte Carlo simulation
+m = 20  # Number of realizations of the simulation
 
-velV = np.random.rand(m) * 5.  # velocity in *pixels* [=V(km/s)/velScale]
+velV = np.random.rand(m)  # velocity in *pixels* [=V(km/s)/velScale]
 sigmaV = np.linspace(
     0.5, 4, m
 )  # Range of sigma in *pixels* [=sigma(km/s)/velScale]
 
 fixed = [0, 0, 0, 0]
 
-sf_type = "ed05"
-z = -0.71
-t = 10.0**0.6
 
-for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 10))):
+pipe3d_spectra = fits.open(os.path.join('..', 'example', 'pipe3d_example_data', 'gsd01_156.fits'))[0]
 
-    # Star burst
-    wave, galaxy = np.load(
-        ".."
-        + os.sep
-        + "synthetic_spectra"
-        + os.sep
-        + "sp_{0}_z{1:1.2f}_t{2:2.2f}.npy".format(sf_type, z, t)
-    ).T
-    galaxy = spectres(wave_new, wave, galaxy)
+pipe3d_spectra_header = pipe3d_spectra.header
+pipe3d_spectra_data = pipe3d_spectra.data
+
+pipe3d_spectra_data_solar = pipe3d_spectra_data[2::4]
+source_spectrum_name_solar = [pipe3d_spectra_header['NAME'+str(i)] for i in range(len(pipe3d_spectra_data))[2::4]]
+pipe3d_spectra_old_metal_poor = pipe3d_spectra_data[1::4][-3]
+
+n_wave = pipe3d_spectra_header['NAXIS1']
+n_spec = pipe3d_spectra_header['NAXIS2']
+
+wave_start = pipe3d_spectra_header['CRVAL1']
+wave_bin = pipe3d_spectra_header['CDELT1']
+
+
+wave = np.linspace(wave_start, wave_start + (n_wave - 1) * wave_bin, n_wave)
+wave_new = np.arange(wave_start, wave_start + (n_wave - 1) * wave_bin, 1.0)
+velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
+
+sf_type = 'burst'
+
+
+for i, galaxy in enumerate(pipe3d_spectra_data_solar):
+
+    source_spectrum_name = source_spectrum_name_solar[i]
+    t = float(source_spectrum_name.split('_')[2][:-3])
+
+    if t < 0.06:
+
+        continue
+
+    z = float(os.path.splitext(source_spectrum_name.split('_')[3])[0][1:])/1e7
+    z = np.log10(z / 0.019)
+
+    galaxy = spectres(wave_new, wave, galaxy + pipe3d_spectra_old_metal_poor)
 
     # natural log
     galaxy_log_rebinned, wave_rebinned, velscale_rebinned = util.log_rebin(
@@ -339,8 +355,8 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
             goodpixels=goodpixels,
             plot=False,
             moments=moments,
-            degree=degree,
-            mdegree=mdegree,
+            degree=10,
+            mdegree=2,
             clean=False,
             vsyst=dv,
             ftol=1e-4,
@@ -348,7 +364,7 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
             lam=np.exp(wave_rebinned),
             linear_method="lsq_box",
             regul=1 / np.nanmedian(noise),
-            bias=0.2,
+            bias=0.0,
             reg_dim=reg_dim,
             component=component,
         )
@@ -365,28 +381,20 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
     age = miles.age_grid[:, 0]
     metallicity = miles.metal_grid[0]
 
-    if sf_type == "sb00":
-        sfr_input = np.zeros_like(age)
-        sfr_input[np.argmin(np.abs(age - t))] = 1.0
-    else:
-        age_input = 10.0 ** np.linspace(
-            np.log10(min(age)), np.log10(max(age)), 1000
-        )
-        sfr_input = np.zeros_like(age_input)
-        sfr_input[age_input <= t] = np.exp(
-            (age_input[age_input <= t] - t) / 0.5
-        )
-        sfr_input = sfr_input / np.nanmax(sfr_input) * np.nanmax(sfr)
-        sfr_input = spectres(age, age_input, sfr_input, fill=0.0)
-
     ml_r = mass_to_light(weights, band="r")
     ml_V = mass_to_light(weights, band="V")
 
     sfr_r = sfr / ml_r
     sfr_V = sfr / ml_V
 
+    sfr_input = np.zeros_like(age)
+    sfr_input[np.argmin(np.abs(age - t))] = 1.0
     input_weights = np.zeros_like(weights.T)
-    input_weights[np.argmin(np.abs(metallicity - z)), :] = sfr_input
+    input_weights[np.argmin(np.abs(metallicity - z)), :] += sfr_input
+
+    sfr_input2 = np.zeros_like(age)
+    sfr_input2[np.argmin(np.abs(age - 10.))] = 1.0
+    input_weights[np.argmin(np.abs(metallicity + 0.4)), :] += sfr_input2
 
     fig = plt.figure(1, figsize=(10, 12))
     plt.clf()
@@ -435,7 +443,7 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
     ax4b.set_yticklabels([""])
 
     ax5.plot(
-        age, sfr_input / np.nanmax(sfr_input), label="Input", color="black"
+        age, np.sum(input_weights, axis=0) / np.nanmax(sfr_input), label="Input", color="black"
     )
     ax5.plot(age, sfr / np.nanmax(sfr), label="Recovered (light-weighted)")
     ax5.plot(
@@ -458,20 +466,20 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
     plt.savefig(
         os.path.join(
             "..",
-            "synthetic_spectra",
+            "pipe3d_spectra",
             "figure",
-            "sp_{0}_z{1:1.2f}_t{2:2.2f}_degree_{3}_mdegree_{4}.png".format(
-                sf_type, z, t, degree, mdegree
+            "sp_{0}_z{1:1.6f}_t{2:2.6f}_z-0.4000002_t10.000000.png".format(
+                sf_type, z, t
             ),
         )
     )
     np.save(
         os.path.join(
             "..",
-            "synthetic_spectra",
+            "pipe3d_spectra",
             "sfr",
-            "sp_{0}_z{1:1.2f}_t{2:2.2f}_degree_{3}_mdegree_{4}_sfr".format(
-                sf_type, z, t, degree, mdegree
+            "sp_{0}_z{1:1.6f}_t{2:2.6f}_z-0.4000002_t10.000000_sfr".format(
+                sf_type, z, t
             ),
         ),
         np.column_stack((age, sfr)),
@@ -479,11 +487,11 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
     np.save(
         os.path.join(
             "..",
-            "synthetic_spectra",
+            "pipe3d_spectra",
             "fitted_model",
             "sp_"
-            "{0}_z{1:1.2f}_t{2:2.2f}_degree_{3}_mdegree_{4}_fitted_model_pp".format(
-                sf_type, z, t, degree, mdegree
+            "{0}_z{1:1.6f}_t{2:2.6f}_z-0.4000002_t10.000000_fitted_model_pp".format(
+                sf_type, z, t
             ),
         ),
         pp,
@@ -491,11 +499,11 @@ for degree, mdegree in list(itertools.product(np.arange(-1, 10), np.arange(-1, 1
     np.save(
         os.path.join(
             "..",
-            "synthetic_spectra",
+            "pipe3d_spectra",
             "fitted_model",
             "sp_"
-            "{0}_z{1:1.2f}_t{2:2.2f}_degree_{3}_mdegree_{4}_fitted_model_weight".format(
-                sf_type, z, t, degree, mdegree
+            "{0}_z{1:1.6f}_t{2:2.6f}_z-0.4000002_t10.000000_fitted_model_weight".format(
+                sf_type, z, t
             ),
         ),
         weights,

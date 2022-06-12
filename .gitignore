@@ -129,3 +129,4 @@ dmypy.json
 .pyre/
 
 example/manga_example_data
+shared_folder/*.npy
