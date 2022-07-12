@@ -33,7 +33,7 @@ def get_dtd(gap, gradient, normalisation=1.0):
     """
     if gradient > 0:
         raise ValueError("Gradient must be negative.")
-    t = 10.**np.linspace(1.0, 11.0, 10001)
+    t = 10.0 ** np.linspace(1.0, 11.0, 10001)
     dtd = np.zeros_like(t)
     mask = t > gap
     dtd[mask] = (t[mask] * 1e-9) ** gradient
@@ -59,13 +59,15 @@ def sn_rate(tau, t, dtd, sfr):
     """
     return sfr(t - tau) * dtd(tau)
 
+
 # 140e-14 SNe / Msun / yr at 0.21 Gyr
+# no SN in the first 50 Myr
 gap = 50e6
 beta = -1.1
 
 t1 = gap / 1e9
 t2 = 0.21
-snr_t2 = 140e-14 * 1.
+snr_t2 = 140e-14 * 1.0
 
 # find the normalsation at the peak SN production
 snr_t1 = snr_t2 * t1**beta / t2**beta
@@ -97,20 +99,21 @@ for i in range(1000):
     )
     # this is a lookback time
     input_age = input_sfh_cube[0]
+    # append extra "time" to improve stability of interpolation at the edge
     input_age = np.append(input_age, [10.52, 10.54, 10.56, 10.58, 10.60])
 
     for j, spexels in enumerate(n_spexels):
 
         if j == 0:
-            spexels_skip = 0
+            spexels_skip = 1
         else:
-            spexels_skip = np.sum(n_spexels[: j - 1])
+            spexels_skip = np.sum(n_spexels[:j]) + 1
 
         input_sfh = input_sfh_cube[j]
-        input_sfh = np.append(input_sfh, [min(input_sfh)]*5)
+        input_sfh = np.append(input_sfh, [min(input_sfh)] * 5)
 
         sfr_itp = itp.interp1d(
-            10.**input_age, input_sfh, kind=3, fill_value="extrapolate"
+            10.0**input_age, input_sfh, kind=3, fill_value="extrapolate"
         )
         # the integral limits are the lookback time
         rate = itg.quad(
@@ -125,7 +128,8 @@ for i in range(1000):
             limlst=1000,
         )
         lamb = rate[0] * detection_window
-        # Get the Possion probability of NOT observing an SN in that spexels within the detection window
+        # Get the Possion probability of NOT observing an SN in that spexels
+        # within the detection window
         prob = np.exp(-lamb)
 
         for spx in range(spexels):
@@ -136,24 +140,25 @@ for i in range(1000):
                 sn_list_galaxy.append(i)
                 sn_list_spexel.append(spexel_idx)
                 N_sn += 1
-                print('BOOM! {}-th SN!'.format(N_sn))
+                print("BOOM! {}-th SN!".format(N_sn))
 
 np.save(
     os.path.join("output", "sn_list"),
-    np.concatenate((sn_list_galaxy, sn_list_spexel)),
+    np.column_stack((sn_list_galaxy, sn_list_spexel)),
 )
 
 
-
-'''
 from matplotlib.pyplot import *
 ion()
 
-figure(1)
-plot(input_age, sfr_itp(10.0**input_age))
+fig, (ax1, ax2) = subplots(nrows=2, sharex=True)
 
+ax1.plot(input_age, sfr_itp(10.0**input_age))
+ax1.set_ylabel(r'SFR / M$_\odot$ yr$^{-1}$')
 
-figure(2)
-plot(input_age, dtd_itp(10.0**input_age))
+ax2.plot(input_age, dtd_itp(10.0**input_age))
+ax2.set_xlabel('log(age)')
+ax2.set_ylabel(r'DTD / SN yr$^{-1}$')
 
-'''
+fig.subplots_adjust(hspace=0.0)
+savefig('input_sfr_and_dtd.png')

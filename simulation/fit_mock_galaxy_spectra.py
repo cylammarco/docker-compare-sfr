@@ -244,18 +244,11 @@ wave_new = np.arange(3650.0, 10000.0, FWHM_gal)
 velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
 
 
-#
-#
-#
-# Modify here to get the input right
-#
-#
-#
 n_rings = 5
 n_spexels = np.arange(n_rings) * 6
 n_spexels[0] = 1
 
-for i in range(10):
+for i in range(10, 20):
 
     galaxy_data_cube = np.load(
         os.path.join("output", "spectrum", "galaxy_{}.npy".format(i))
@@ -271,9 +264,9 @@ for i in range(10):
         if j == 0:
             spexels_skip = 0
         else:
-            spexels_skip = np.sum(n_spexels[:j-1])
+            spexels_skip = np.sum(n_spexels[:j])
 
-        input_sfh = input_sfh_cube[j]
+        input_sfh = input_sfh_cube[j+1]
 
         for spx in range(spexels):
 
@@ -373,7 +366,7 @@ for i in range(10):
                                     reg_dim,
                                     component,
                                     desired_chi2),
-                                method='Nelder-Mead',
+                                method='Powell',
                                 options={'ftol': 1e-1, 'xtol': 1e-1})
             best_reg = results.x
 
