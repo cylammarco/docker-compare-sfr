@@ -39,19 +39,12 @@ def get_dtd(gap, gradient, normalisation=1.0):
 
 
 @jit(nopython=False)
-def likelihood_spexel(dtd, mass_grid, sn_mask, size):
+def likelihood_spexel(dtd, mass_grid, sn_mask):
     # Eq. 2, the lamb is for each galaxy
-    lamb = (
-        np.nansum(
-            np.array([10.0**dtd * mass_grid[i] for i in range(size)]), axis=2
-        )
-        * t_obs
-        * epsilon
-    )
+    lamb = np.sum(10.0**dtd * mass_grid, axis=2)
     # Eq. 6, currently assuming either 0 or 1 SN per voronoi cell
     ln_like = -np.sum(lamb) + np.sum(np.log(lamb[sn_mask]))
-    if np.isnan(ln_like).any():
-        return -np.inf
+    print(-ln_like)
     return -ln_like
 
 
@@ -163,10 +156,15 @@ dtd_50_bin = np.log10(dtd_itp(10.0**input_age_50_bin))
 dtd_50_bin[~np.isfinite(dtd_50_bin)] = -1e30
 size = len(mass_grid)
 
+mask = (n_sn>0 & np.isfinite(np.sum(mass_grid, axis=2)))
+mask_50_bin = (n_sn>0 & np.isfinite(np.sum(mass_grid_50_bin, axis=2)))
+mask_20_bin = (n_sn>0 & np.isfinite(np.sum(mass_grid_20_bin, axis=2)))
+mask_10_bin = (n_sn>0 & np.isfinite(np.sum(mass_grid_10_bin, axis=2)))
+
 answer = minimize(
     likelihood_spexel,
     dtd,
-    args=(mass_grid, (n_sn>0), size),
+    args=(mass_grid, mask),
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
@@ -176,7 +174,7 @@ np.save(os.path.join("output", "recovered_dtd_0.02_dex"), answer)
 answer_50_bin = minimize(
     likelihood_spexel,
     dtd_50_bin,
-    args=(mass_grid_50_bin, (n_sn>0), size),
+    args=(mass_grid_50_bin, mask_50_bin),
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
@@ -186,7 +184,7 @@ np.save(os.path.join("output", "recovered_dtd_0.08_dex"), answer_50_bin)
 answer_20_bin = minimize(
     likelihood_spexel,
     dtd_20_bin,
-    args=(mass_grid_20_bin, (n_sn>0), size),
+    args=(mass_grid_20_bin, mask_20_bin),
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
@@ -196,7 +194,7 @@ np.save(os.path.join("output", "recovered_dtd_0.2_dex"), answer_20_bin)
 answer_10_bin = minimize(
     likelihood_spexel,
     dtd_10_bin,
-    args=(mass_grid_10_bin, (n_sn>0), size),
+    args=(mass_grid_10_bin, mask_10_bin),
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
