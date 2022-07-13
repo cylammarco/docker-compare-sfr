@@ -170,22 +170,8 @@ answer = minimize(
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
-
-answer_10_bin = minimize(
-    likelihood_spexel,
-    dtd_10_bin,
-    args=(mass_grid_10_bin, (n_sn>0), size),
-    method="Nelder-Mead",
-    options={"maxiter": 100000},
-)
-
-answer_20_bin = minimize(
-    likelihood_spexel,
-    dtd_20_bin,
-    args=(mass_grid_20_bin, (n_sn>0), size),
-    method="Nelder-Mead",
-    options={"maxiter": 100000},
-)
+print(answer)
+np.save(os.path.join("output", "recovered_dtd_0.02_dex"), answer)
 
 answer_50_bin = minimize(
     likelihood_spexel,
@@ -194,13 +180,35 @@ answer_50_bin = minimize(
     method="Nelder-Mead",
     options={"maxiter": 100000},
 )
+print(answer_50_bin)
+np.save(os.path.join("output", "recovered_dtd_0.08_dex"), answer_50_bin)
+
+answer_20_bin = minimize(
+    likelihood_spexel,
+    dtd_20_bin,
+    args=(mass_grid_20_bin, (n_sn>0), size),
+    method="Nelder-Mead",
+    options={"maxiter": 100000},
+)
+print(answer_20_bin)
+np.save(os.path.join("output", "recovered_dtd_0.2_dex"), answer_20_bin)
+
+answer_10_bin = minimize(
+    likelihood_spexel,
+    dtd_10_bin,
+    args=(mass_grid_10_bin, (n_sn>0), size),
+    method="Nelder-Mead",
+    options={"maxiter": 100000},
+)
+print(answer_10_bin)
+np.save(os.path.join("output", "recovered_dtd_0.4_dex"), answer_10_bin)
 
 plt.figure(1, figsize=(8, 6))
 plt.clf()
 plt.scatter(10.0**input_age, 10.0**answer.x, label='0.02 dex log(age/Gyr) binning')
 plt.scatter(10.0**input_age_10_bin, 10.0**answer_10_bin.x, label='0.4 dex log(age/Gyr) binning')
-#plt.scatter(10.0**input_age_20_bin, 10.0**answer_20_bin.x, label='0.2 dex log(age/Gyr) binning')
-#plt.scatter(10.0**input_age_50_bin, 10.0**answer_50_bin.x, label='0.08 dex log(age/Gyr) binning')
+plt.scatter(10.0**input_age_20_bin, 10.0**answer_20_bin.x, label='0.2 dex log(age/Gyr) binning')
+plt.scatter(10.0**input_age_50_bin, 10.0**answer_50_bin.x, label='0.08 dex log(age/Gyr) binning')
 plt.plot(10.0**input_age, dtd_itp(10.0**input_age), label='Input DTD')
 plt.grid()
 # plt.xlim(1e-2, 13)
@@ -212,8 +220,4 @@ plt.ylabel(r"SN / yr / M$_\odot$")
 plt.legend(loc="upper right")
 plt.title("Non-parametric fit")
 plt.tight_layout()
-
-np.save(os.path.join("output", "recovered_dtd_0.02_dex"), answer)
-np.save(os.path.join("output", "recovered_dtd_0.08_dex"), answer_50_bin)
-np.save(os.path.join("output", "recovered_dtd_0.2_dex"), answer_20_bin)
-np.save(os.path.join("output", "recovered_dtd_0.4_dex"), answer_10_bin)
+plt.savefig('best_fit_dtd.png')
