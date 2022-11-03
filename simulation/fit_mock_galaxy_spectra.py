@@ -18,7 +18,7 @@ from scipy.optimize import minimize
 ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
 miles_pathname = ppxf_dir + os.sep + "miles_models" + os.sep + "Eun1.30Z*.fits"
 
-synthetic_spectrum_dir = ".." + os.sep + "synthetic_spectra"
+synthetic_spectrum_dir = os.path.join("output", "spectrum")
 
 file_vega = (
     ppxf_dir + "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
@@ -168,9 +168,11 @@ def find_reg(
     desired_chi2,
 ):
     reg_guess = reg_guess[0]
-    if reg_guess < 0.:
+    if reg_guess < 0.0:
         return np.inf
+    '''
     print("Current regularisation value is: {}.".format(reg_guess))
+    '''
     pp = ppxf(
         templates=templates,
         galaxy=galaxy,
@@ -192,16 +194,23 @@ def find_reg(
         bias=bias,
         reg_dim=reg_dim,
         component=component,
+        quiet=True,
     )
     chi2_diff = pp.chi2 * pp.dof - desired_chi2
+    '''
     print("")
-    print("================================================================================")
+    print(
+        "================================================================================"
+    )
     print("Current Chi^2: {}".format(pp.chi2 * pp.dof))
     print("Desired Chi^2: {}".format(desired_chi2))
     print("Current distance from the desired Chi^2 is: {}.".format(chi2_diff))
-    print("================================================================================")
+    print(
+        "================================================================================"
+    )
     print("")
-    return chi2_diff**2.
+    '''
+    return chi2_diff**2.0
 
 
 # speed of light
@@ -214,22 +223,6 @@ z = 0.0
 # and (V, sig) moments=2 for the two gas kinematic components
 moments = 4
 
-if not os.path.exists(".." + os.sep + "synthetic_spectra" + os.sep + "sfr"):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "sfr")
-
-if not os.path.exists(
-    ".." + os.sep + "synthetic_spectra" + os.sep + "fitted_model"
-):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "fitted_model")
-
-if not os.path.exists(
-    ".." + os.sep + "synthetic_spectra" + os.sep + "age_metallicity"
-):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "age_metallicity")
-
-if not os.path.exists(".." + os.sep + "synthetic_spectra" + os.sep + "figure"):
-    os.mkdir(".." + os.sep + "synthetic_spectra" + os.sep + "figure")
-
 factor = 10  # Oversampling integer factor for an accurate convolution
 h3 = 0.01  # Adopted G-H parameters of the LOSVD
 h4 = 0.01
@@ -239,7 +232,9 @@ m = 100  # Number of realizations of the simulation
 # Data are at z=0.025, but the spectra are not redshifted in the simulation
 z = 0
 
-FWHM_gal = 2.76  # SDSS has an approximate instrumental resolution FWHM of 2.76A.
+FWHM_gal = (
+    2.76  # SDSS has an approximate instrumental resolution FWHM of 2.76A.
+)
 wave_new = np.arange(3650.0, 10000.0, FWHM_gal)
 velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
 
@@ -248,7 +243,7 @@ n_rings = 5
 n_spexels = np.arange(n_rings) * 6
 n_spexels[0] = 1
 
-for i in range(10, 20):
+for i in range(100):
 
     galaxy_data_cube = np.load(
         os.path.join("output", "spectrum", "galaxy_{}.npy".format(i))
@@ -266,25 +261,37 @@ for i in range(10, 20):
         else:
             spexels_skip = np.sum(n_spexels[:j])
 
-        input_sfh = input_sfh_cube[j+1]
+        input_sfh = input_sfh_cube[j + 1]
 
         for spx in range(spexels):
 
             galaxy = galaxy_data_cube[1 + spexels_skip + spx]
             galaxy = spectres(wave_new, wave, galaxy)
-            velscale = c*np.log(wave_new[1]/wave_new[0])
+            velscale = c * np.log(wave_new[1] / wave_new[0])
 
             # natural log
-            galaxy_log_rebinned, wave_rebinned, velscale_rebinned = util.log_rebin(
-                [np.nanmin(wave_new), np.nanmax(wave_new)], galaxy, velscale=velscale
+            (
+                galaxy_log_rebinned,
+                wave_rebinned,
+                velscale_rebinned,
+            ) = util.log_rebin(
+                [np.nanmin(wave_new), np.nanmax(wave_new)],
+                galaxy,
+                velscale=velscale,
             )
 
             noise = galaxy_log_rebinned / sn
 
             weights = []
 
-            miles = lib.miles(miles_pathname, velscale_rebinned, FWHM_gal, age_range=None,
-                            metal_range=[-0.5, 0.5], wave_range=(3500, 10500))
+            miles = lib.miles(
+                miles_pathname,
+                velscale_rebinned,
+                FWHM_gal,
+                age_range=None,
+                metal_range=[-0.05, 0.05],
+                wave_range=(3500, 10500),
+            )
             reg_dim = miles.templates.shape[1:]
             templates = miles.templates.reshape(miles.templates.shape[0], -1)
             n_temps = templates.shape[1]
@@ -294,7 +301,6 @@ for i in range(10, 20):
             # the forbidden lines.
             component = [0] * n_temps
 
-
             goodpixels = np.arange(len(galaxy_log_rebinned))
 
             vel = c * np.log(1 + z)
@@ -302,7 +308,7 @@ for i in range(10, 20):
             start = [vel, 1.0, h3, h4]
             degree = 8
             mdegree = 0
-            #fixed = None
+            # fixed = None
             fixed = [0, 0, 0, 0]
 
             # Get the UNREGULARISED fit here
@@ -321,12 +327,13 @@ for i in range(10, 20):
                 ftol=1e-4,
                 fixed=fixed,
                 lam=np.exp(wave_rebinned),
-                lam_temp=miles.lam_temp,
+                lam_temp=np.exp(miles.ln_lam_temp),
                 linear_method="lsq_box",
                 regul=0.0,
                 bias=0.0,
                 reg_dim=reg_dim,
                 component=component,
+                quiet=True,
             )
 
             scaling_factor = np.sqrt(_pp.chi2)
@@ -336,38 +343,47 @@ for i in range(10, 20):
             desired_chi2 = unregularised_chi2 + delta_chi2
 
             print("")
-            print("================================================================================")
+            print(
+                "================================================================================"
+            )
             print("Galaxy {} Spexel {}".format(i, 1 + spexels_skip + spx))
             print("Unregularised Chi^2: {}".format(unregularised_chi2))
             print("Desired delta(Chi^2) = {}".format(delta_chi2))
             print("Desired Chi^2: {}".format(desired_chi2))
-            print("================================================================================")
+            print(
+                "================================================================================"
+            )
             print("")
 
-            results = minimize(find_reg,
-                                3e-3,
-                                args=(templates,
-                                    galaxy_log_rebinned,
-                                    noise * scaling_factor,
-                                    velscale_rebinned,
-                                    start,
-                                    goodpixels,
-                                    False,
-                                    moments,
-                                    degree,
-                                    mdegree,
-                                    False,
-                                    1e-4,
-                                    fixed,
-                                    np.exp(wave_rebinned),
-                                    miles.lam_temp,
-                                    "lsq_box",
-                                    None,
-                                    reg_dim,
-                                    component,
-                                    desired_chi2),
-                                method='Powell',
-                                options={'ftol': 1e-1, 'xtol': 1e-1})
+            results = minimize(
+                find_reg,
+                3e-3,
+                args=(
+                    templates,
+                    galaxy_log_rebinned,
+                    noise * scaling_factor,
+                    velscale_rebinned,
+                    start,
+                    goodpixels,
+                    False,
+                    moments,
+                    degree,
+                    mdegree,
+                    False,
+                    1e-4,
+                    fixed,
+                    np.exp(wave_rebinned),
+                    np.exp(miles.ln_lam_temp),
+                    "lsq_box",
+                    None,
+                    reg_dim,
+                    component,
+                    desired_chi2,
+                ),
+                tol=5e-1,
+                method="Powell",
+                options={"ftol": 5e-1, "xtol": 5e-1},
+            )
             best_reg = results.x
 
             pp = ppxf(
@@ -384,7 +400,7 @@ for i in range(10, 20):
                 ftol=1e-4,
                 fixed=fixed,
                 lam=np.exp(wave_rebinned),
-                lam_temp=miles.lam_temp,
+                lam_temp=np.exp(miles.ln_lam_temp),
                 linear_method="lsq_box",
                 regul=best_reg[0],
                 bias=0.0,
@@ -416,7 +432,12 @@ for i in range(10, 20):
             ax4 = plt.subplot(gs[3])
 
             ax1.plot(np.exp(wave_rebinned), galaxy_log_rebinned, label="Input")
-            ax1.plot(np.exp(wave_rebinned), pp.bestfit, color="black", label="Fitted")
+            ax1.plot(
+                np.exp(wave_rebinned),
+                pp.bestfit,
+                color="black",
+                label="Fitted",
+            )
             ax1.scatter(
                 np.exp(wave_rebinned),
                 galaxy_log_rebinned - pp.bestfit,
@@ -425,9 +446,16 @@ for i in range(10, 20):
                 label="Residual",
             )
             ax1.grid()
-            ax1.set_xlim(min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned)))
+            ax1.set_xlim(
+                min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned))
+            )
             ax1.set_xlabel("Wavelength / A")
             ax1.set_ylabel("Relative Flux")
+            ax1.set_title(
+                "Galaxy {} Spexel {}: Regularisation = {}".format(
+                    i, 1 + spexels_skip + spx, best_reg[0]
+                )
+            )
             ax1.legend()
 
             ax3.imshow(
@@ -442,14 +470,25 @@ for i in range(10, 20):
             ax3b.set_ylabel("Recovered")
             ax3b.set_yticklabels([""])
 
-            ax4.plot(age, sfr / np.nanmax(sfr), label="Recovered (light-weighted)")
             ax4.plot(
-                age, sfr_r / np.nanmax(sfr_r), label="Recovered (mass-weighted, r)"
+                age, sfr / np.nanmax(sfr), label="Recovered (light-weighted)"
             )
             ax4.plot(
-                age, sfr_V / np.nanmax(sfr_V), label="Recovered (mass-weighted, V)"
+                age,
+                sfr_r / np.nanmax(sfr_r),
+                label="Recovered (mass-weighted, r)",
             )
-            ax4.plot((10.**input_age)/1e9, input_sfh/np.nanmax(input_sfh), label='Input (mass-weighted)', color='black')
+            ax4.plot(
+                age,
+                sfr_V / np.nanmax(sfr_V),
+                label="Recovered (mass-weighted, V)",
+            )
+            ax4.plot(
+                (10.0**input_age) / 1e9,
+                input_sfh / np.nanmax(input_sfh),
+                label="Input (mass-weighted)",
+                color="black",
+            )
             ax4.set_xlim(np.nanmin(age), np.nanmax(age))
             ax4.grid()
             ax4.set_xscale("log")
@@ -460,4 +499,12 @@ for i in range(10, 20):
             plt.subplots_adjust(
                 top=0.975, bottom=0.05, left=0.08, right=0.95, hspace=0
             )
-            plt.savefig(os.path.join("output", "fit", "galaxy_{}_spexel_{}.png".format(i, 1 + spexels_skip + spx)))
+            plt.savefig(
+                os.path.join(
+                    "output",
+                    "fit",
+                    "galaxy_{}_spexel_{}.png".format(
+                        i, 1 + spexels_skip + spx
+                    ),
+                )
+            )
