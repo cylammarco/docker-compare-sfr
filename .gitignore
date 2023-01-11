@@ -130,3 +130,8 @@ dmypy.json
 
 example/manga_example_data
 shared_folder/*.npy
+.vscode
+firefly/*.fits
+firefly/*.fit
+firefly/*.bz2
+firefly/*.gz
