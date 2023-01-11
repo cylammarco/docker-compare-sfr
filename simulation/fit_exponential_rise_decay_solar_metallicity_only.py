@@ -115,7 +115,7 @@ def get_uncertainty(
         pp = ppxf(
             templates_corrected,
             galaxy_noise_added,
-            noise_rescaled,
+            residual,
             velscale_rebinned,
             start,
             goodpixels=goodpixels,
@@ -180,8 +180,8 @@ velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
 
 filename = os.path.join(
     "output",
-    "simple_bursts",
-    "spectrum_1.0_gyr.npy",
+    "exponential_rise_decay",
+    "spectrum_1.0_gyr_2.0_rise_decay.npy",
 )
 wave, _galaxy, error = np.load(filename, allow_pickle=True).T
 
@@ -205,9 +205,9 @@ miles = lib.miles(
     velscale_rebinned,
     FWHM_gal,
     age_range=None,
-    norm_range=[4000, 5300],
+    norm_range=[5070, 5950],
     metal_range=[-0.05, 0.05],
-    wave_range=(3000, 10500),
+    wave_range=(3000, 8200),
 )
 reg_dim = miles.templates.shape[1:]
 stars_templates = miles.templates.reshape(miles.templates.shape[0], -1)
@@ -237,8 +237,8 @@ tau = 2.0
 for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     filename = os.path.join(
         "output",
-        "simple_bursts",
-        f"spectrum_{age:.1f}_gyr.npy",
+        "exponential_rise_decay",
+        f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay.npy",
     )
 
     wave, galaxy, galaxy_err = np.load(filename, allow_pickle=True).T
@@ -252,9 +252,8 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     ) = util.log_rebin(wave_new, galaxy, velscale=velscale, flux=False)
 
     (noise, wave_rebinned, velscale_rebinned,) = util.log_rebin(
-        wave_new, 1.0 / galaxy_err**2.0, velscale=velscale, flux=False
+        wave_new, galaxy_err, velscale=velscale, flux=False
     )
-    noise = 1.0 / np.sqrt(noise)
     goodpixels = np.arange(len(galaxy_log_rebinned))[1:]
 
     start = [100.0, 10.0, h3, h4]
@@ -350,7 +349,7 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     # Step (iv) of Kacharov et al. 2018
     results = minimize(
         find_reg,
-        np.log10(1e4),
+        np.log10(1e-2),
         args=(
             templates_corrected,
             galaxy_log_rebinned,
@@ -404,6 +403,7 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
         reg_dim=reg_dim,
         component=component,
     )
+    print(f"Best fit reduced-chi2: {pp.chi2}")
 
     # Resampling 100 times using the residuals
     (
@@ -414,7 +414,7 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
         sfr_mass_bootstrap,
     ) = get_uncertainty(
         templates_corrected,
-        galaxy_log_rebinned,
+        pp.bestfit,
         noise_rescaled_2,
         velscale_rebinned,
         start,
@@ -438,7 +438,9 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     )
 
     light_weights = pp.weights  # Exclude gas templates weights
-    light_weights = light_weights.reshape(reg_dim)  # Reshape to a 2D matrix
+    light_weights = light_weights.reshape(
+        reg_dim
+    )  # Reshape to a 2D matrix
 
     # convert from light to mass, hence 1./Mass-to-light
     mass_weights = light_weights / miles.flux
@@ -475,6 +477,14 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
         s=2,
         label="Residual",
     )
+    for s in galaxy_bootstrap:
+        ax1.plot(
+            np.exp(wave_rebinned),
+            s,
+            color="grey",
+            alpha=0.1,
+            zorder=15,
+        )
     ax1.grid()
     ax1.set_xlim(min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned)))
     ax1.set_xlabel("Wavelength / A")
@@ -509,8 +519,8 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     )
 
     t_lookback = 10.0 ** np.arange(5.0, 10.2, 0.001)
-    sfh = np.zeros_like(t_lookback)
-    sfh[np.argmin(np.abs(t_lookback / 1e9 - age))] = 1.0
+    sfh = np.exp(-np.abs(age * 1.0e9 - t_lookback) / (tau * 1.0e9))
+    sfh /= max(sfh)
 
     ax4.plot(t_lookback / 1e9, sfh, label="Input")
 
@@ -554,7 +564,7 @@ for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
     plt.savefig(
         os.path.join(
             "output",
-            "simple_bursts",
-            f"spectrum_{age:.1f}_gyr_fitted.png",
+            "exponential_rise_decay",
+            f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay_fitted.png",
         )
     )

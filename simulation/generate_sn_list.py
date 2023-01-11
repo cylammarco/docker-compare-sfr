@@ -13,7 +13,7 @@ cosmo = cosmology.FlatLambdaCDM(
     Tcmb0=2.725 * units.K,
     Om0=0.3,
 )
-age_universe = cosmo.age(0).value * 1e9
+age_universe = cosmo.age(0).to_value() * 1e9
 log_age_universe = np.log10(age_universe)
 
 
@@ -21,7 +21,7 @@ def get_dtd(gap, gradient, normalisation=1.0):
     """
     Return an interpolated function of a delay time distribution
     function based on the input delay time and gradient. The returned
-    function takes t which is the time in yr.
+    function takes t which is the lockback time in yr.
     Parameters
     ----------
     gap : array_like
@@ -66,7 +66,7 @@ def sn_rate(tau, dtd, sfr):
 # no SN in the first 50 Myr
 gap = 50e6
 beta = -1.1
-nudge_factor = 10.0
+nudge_factor = 100.0
 
 t1 = gap / 1e9
 t2 = 0.21
@@ -78,7 +78,7 @@ snr_t1 = snr_t2 * t1**beta / t2**beta
 dtd_itp = get_dtd(gap, beta, normalisation=snr_t1)
 
 
-t = np.arange(6.5,10.5, 0.01)
+t = np.arange(6.5, 10.5, 0.01)
 
 input_sfh_cube = np.load(
     os.path.join("output", "sfh", "galaxy_sfh_1.npy")
@@ -176,9 +176,10 @@ for i in range(1000):
         # within the detection window
         # P(n=0) = e^-lambda
         prob_0 = np.exp(-lamb)
-        prob_1 = lamb * np.exp(-lamb)
-        prob_2 = 1 - prob_0 - prob_1
-        print(prob_0, prob_1, prob_2)
+        prob_1 = lamb * prob_0
+        prob_2 = lamb ** 2.0 * prob_0 / 2.0
+        prob_3 = lamb ** 3.0 * prob_0 / 6.0
+        prob_4 = 1 - prob_0 - prob_1 - prob_2 - prob_3
 
         for spx in range(spexels):
 
@@ -187,7 +188,25 @@ for i in range(1000):
 
             if prob_0 > rnd:
                 pass
-            elif prob_2 < rnd:
+            elif prob_0 + prob_1 > rnd:
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
+            elif prob_0 + prob_1 + prob_2 > rnd:
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
+            elif prob_0 + prob_1 + prob_2 + prob_3 > rnd:
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
                 sn_list_galaxy.append(i)
                 sn_list_spexel.append(spexel_idx)
                 N_sn += 1
@@ -197,6 +216,18 @@ for i in range(1000):
                 N_sn += 1
                 print("BOOM! {}-th SN!".format(N_sn))
             else:
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
+                sn_list_galaxy.append(i)
+                sn_list_spexel.append(spexel_idx)
+                N_sn += 1
+                print("BOOM! {}-th SN!".format(N_sn))
                 sn_list_galaxy.append(i)
                 sn_list_spexel.append(spexel_idx)
                 N_sn += 1

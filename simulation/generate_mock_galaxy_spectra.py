@@ -9,8 +9,9 @@ import fsps
 import numpy as np
 from matplotlib import pyplot as plt
 
-if not os.path.exists('output'):
-    os.mkdir('output')
+if not os.path.exists("output"):
+    os.mkdir("output")
+
 
 def schechter(logm, logphi, logmstar, alpha, m_lower=None):
     """
@@ -129,7 +130,7 @@ plt.vlines(
     ymax=max(mf_normed),
     color="black",
     label="Lower Mass Limit",
-    ls="--"
+    ls="--",
 )
 plt.ylim(min(mf_normed), max(mf_normed))
 plt.xlim(min(logm), max(logm))
@@ -139,11 +140,10 @@ plt.title("Mass Function")
 plt.grid()
 plt.legend()
 plt.tight_layout()
-plt.savefig('output/input_mass_function.png')
+plt.savefig("output/input_mass_function.png")
 
 
-
-def draw_random_log_age(minimum, maximum, power=2.0, size=None):
+def draw_random_log_age(minimum, maximum, power=2.5, size=None):
     return np.random.power(a=power, size=size) * (maximum - minimum) + minimum
 
 
@@ -160,13 +160,14 @@ def get_sfh(log_age, peak_age):
     The relative SFH at the given log_age location.
     """
     mean = peak_age
-    stdv = 0.1
+    stdv = 0.25
     variance = stdv**2.0
     f = (
         np.exp(-((log_age - mean) ** 2.0) / 2 / variance)
         / np.sqrt(2 * np.pi)
         / stdv
     )
+    f /= np.sum(f)
     return f
 
 
@@ -191,8 +192,7 @@ plt.xlabel("log(Age / Gyr)")
 plt.ylabel("Arbitrary Density")
 plt.title("Example Star Fromation History")
 plt.tight_layout()
-plt.savefig('output/input_base_sfh.png')
-
+plt.savefig("output/input_base_sfh.png")
 
 
 cosmo = cosmology.FlatLambdaCDM(
@@ -200,15 +200,26 @@ cosmo = cosmology.FlatLambdaCDM(
     Tcmb0=2.725 * units.K,
     Om0=0.3,
 )
-log_age_universe = np.log10(cosmo.age(0).value * 1e9)
+age_universe = cosmo.age(0).to_value() * 1e9
+log_age_universe = np.log10(age_universe)
 
+
+from astropy.constants import iau2012 as const
+
+solar_flux_density = const.L_sun.to(units.erg / units.s) / (
+    4.0 * np.pi * const.pc**2 * 10.0**2.0
+)
 
 # Python-FSPS defines the age as the time since the beginning of the Universe
 # in Gyr, always supply in a sorted array.
 sp = fsps.StellarPopulation(
     compute_vega_mags=False,
     zcontinuous=3,
-    sfh=3
+    sfh=3,
+    add_agb_dust_model=False,
+    add_dust_emission=False,
+    add_neb_continuum=False,
+    nebemlineinspec=False,
 )
 
 """
@@ -221,9 +232,8 @@ plt.savefig('output/example_spectrum.png')
 """
 
 
-
 def sersic_profile(r, alpha=1, n=1):
-    '''
+    """
     Parameters
     ----------
     r: float
@@ -235,8 +245,9 @@ def sersic_profile(r, alpha=1, n=1):
     Returns
     -------
     The fraction of luminosity of the centre (0).
-    '''
-    return np.exp(-(r/alpha)**(1/n))
+    """
+    return np.exp(-((r / alpha) ** (1 / n)))
+
 
 # age = lookback time
 # time = time since the beginning of the universe
@@ -244,7 +255,7 @@ def build_a_galaxy():
     #
     min_age = 8.0
     max_age = log_age_universe * 0.995
-    sn = 30.0
+    snr = 1.0
     alpha = 1.0
     alpha_halo = 2.0
     n = 1.0
@@ -255,23 +266,36 @@ def build_a_galaxy():
     mass_ratio_halo = sersic_profile(np.arange(n_rings), alpha=alpha_halo)
     #
     # Get a random age from the distribution
-    random_ages = np.sort(10.0 ** draw_random_log_age(min_age, max_age, power=1.0, size=(n_rings+1)) / 1e9)
+    random_ages = np.sort(
+        10.0
+        ** draw_random_log_age(min_age, max_age, power=1.0, size=(n_rings + 1))
+        / 1e9
+    )
     #
     # Convert from lookback time to time since the beginning (Gyr)
     time = 10.0**log_age_universe / 1.0e9 - random_ages
     # Bin width of each time bin (in yr)
-    time_bin_duration = 10.**(log_age + log_age_bin_size / 2.) - 10.**(log_age - log_age_bin_size / 2.)
+    time_bin_duration = 10.0 ** (log_age + log_age_bin_size / 2.0) - 10.0 ** (
+        log_age - log_age_bin_size / 2.0
+    )
     #
     # setup the SFH, the +1 is to get the oldest component to use as a halo
-    sfh = np.array([get_sfh(log_age, np.log10(random_ages[i]*1e9)) for i in range(n_rings + 1)])
+    sfh = np.array(
+        [
+            get_sfh(log_age, np.log10(random_ages[i] * 1e9))
+            for i in range(n_rings + 1)
+        ]
+    )
     # Normalise the SFH with time
     sfh_normalisation = np.sum(time_bin_duration * sfh, axis=1)
     # Get a random mass from the mass function, in solar mass
     total_mass = 10.0 ** draw_random_mass(logm, mf, log_mass_limit)
     mass_normalisation = np.sum(mass_ratio * n_spexels)
     mass_normalisation_halo = np.sum(mass_ratio_halo * n_spexels)
-    mass_per_spexel = total_mass * 0.9 * mass_ratio / mass_normalisation
-    mass_per_spexel_halo = total_mass * 0.1 * mass_ratio_halo / mass_normalisation_halo
+    mass_per_spexel = total_mass * 0.8 * mass_ratio / mass_normalisation
+    mass_per_spexel_halo = (
+        total_mass * 0.2 * mass_ratio_halo / mass_normalisation_halo
+    )
     data_cube = []
     sfh_cube = []
     fig1 = plt.figure(1)
@@ -280,49 +304,58 @@ def build_a_galaxy():
     fig2 = plt.figure(2)
     plt.clf()
     ax2 = plt.gca()
-    # Work in mass 
+    # Work in mass
     _min_temp = 1e10
     _max_temp = 0
     for i, spx in enumerate(n_spexels):
         #
         # the sfh[-1] is the homogeneous halo SFH across the entire galaxy
-        sfh_mass = sfh[i] * mass_per_spexel[i] + sfh[-1] * mass_per_spexel_halo[i]
+        sfh_mass = (
+            sfh[i] * mass_per_spexel[i] + sfh[-1] * mass_per_spexel_halo[i]
+        )
         # change the unit to per year
         sfh_mass /= sfh_normalisation[i]
         sfh_cube.append(sfh_mass)
         #
         # inform the python-fsps the SFH
-        _t = np.concatenate(((10.0**log_age_universe / 1.0e9 - 10.0**log_age / 1.0e9), [0]))
+        _t = np.concatenate(
+            ((10.0**log_age_universe / 1.0e9 - 10.0**log_age / 1.0e9), [0])
+        )
         _t_arg_sort = np.argsort(_t)
         _M = np.concatenate((sfh_mass, [0]))
         _Z = 0.019 * np.ones_like(_M)
         sp.set_tabular_sfh(_t[_t_arg_sort], _M[_t_arg_sort], _Z[_t_arg_sort])
         #
-        # get the spectrum 
-        wave, spectrum = sp.get_spectrum(tage=10.0**log_age_universe / 1.0e9, peraa=True)
-        mask = (wave>1000.0) & (wave<100000.0)
+        # get the spectrum
+        # the _t and _M have taken into account of the zero SFR, so the tage is the age of the universe
+        wave, spectrum = sp.get_spectrum(
+            tage=10.0**log_age_universe / 1.0e9, peraa=True
+        )
+        mask = (wave > 1000.0) & (wave < 100000.0)
         wave = wave[mask]
         spectrum = spectrum[mask]
         #
         # add noise
-        noise = spectrum / sn
+        # noise = spectrum / snr
+        # for j in range(spx):
+        #    data_cube.append(np.random.normal(spectrum, noise))
         for j in range(spx):
-            data_cube.append(np.random.normal(spectrum, noise))
+            data_cube.append(spectrum)
         #
         ax1.plot(log_age, sfh_mass, label=str(i))
         ax2.plot(wave, data_cube[-1], label=str(i))
         #
-        spec_view_window = data_cube[-1][(wave>3000.0) & (wave<8000.0)]
+        spec_view_window = data_cube[-1][(wave > 3000.0) & (wave < 8000.0)]
         if min(spec_view_window) < _min_temp:
             _min_temp = min(spec_view_window)
         if max(spec_view_window) > _max_temp:
             _max_temp = max(spec_view_window)
     data_cube.insert(0, wave)
     sfh_cube.insert(0, log_age)
-    ax1.set_xlabel('log(Age / yr)')
-    ax1.set_ylabel(r'SFH / (M$_{\odot}$ / yr)')
-    ax2.set_xlabel('Wavelength / A')
-    ax2.set_ylabel(r'L$_{\odot}$ / A')
+    ax1.set_xlabel("log(Age / yr)")
+    ax1.set_ylabel(r"SFH / (M$_{\odot}$ / yr)")
+    ax2.set_xlabel("Wavelength / A")
+    ax2.set_ylabel(r"L$_{\odot}$ / A")
     ax2.set_xlim(3000.0, 8000.0)
     ax2.set_ylim(_min_temp, _max_temp)
     ax1.legend()
@@ -335,19 +368,17 @@ def build_a_galaxy():
     return data_cube, sfh_cube, fig1, fig2
 
 
+if not os.path.exists(os.path.join("output", "spectrum")):
+    os.mkdir(os.path.join("output", "spectrum"))
 
-if not os.path.exists(os.path.join('output', 'spectrum')):
-    os.mkdir(os.path.join('output', 'spectrum'))
-
-if not os.path.exists(os.path.join('output', 'sfh')):
-    os.mkdir(os.path.join('output', 'sfh'))
+if not os.path.exists(os.path.join("output", "sfh")):
+    os.mkdir(os.path.join("output", "sfh"))
 
 for i in range(1000):
     #
     print(i)
     galaxy, sfh, f1, f2 = build_a_galaxy()
-    np.save(os.path.join('output', 'spectrum', 'galaxy_{}'.format(i)), galaxy)
-    np.save(os.path.join('output', 'sfh', 'galaxy_sfh_{}'.format(i)), sfh)
-    f1.savefig(os.path.join('output', 'sfh', 'galaxy_{}.png'.format(i)))
-    f2.savefig(os.path.join('output', 'spectrum', 'galaxy_{}.png'.format(i)))
-
+    np.save(os.path.join("output", "spectrum", "galaxy_{}".format(i)), galaxy)
+    np.save(os.path.join("output", "sfh", "galaxy_sfh_{}".format(i)), sfh)
+    f1.savefig(os.path.join("output", "sfh", "galaxy_{}.png".format(i)))
+    f2.savefig(os.path.join("output", "spectrum", "galaxy_{}.png".format(i)))
