@@ -1,4 +1,5 @@
 import os
+import sys
 
 from astropy import units
 from astropy import cosmology
@@ -53,7 +54,7 @@ def sn_rate(tau, dtd, sfr):
     tau : float
         Lookback time in unit of yr.
     dtd : callable
-        The delay time distribution function (time since the beginning). In
+        The delay time distribution function (look-back-time). In
         the unit of number of supernovae per solar mass formed per year.
     sfr : callable
         The star formation rate function (look-back-time). In the unit of
@@ -66,7 +67,10 @@ def sn_rate(tau, dtd, sfr):
 # no SN in the first 50 Myr
 gap = 50e6
 beta = -1.1
-nudge_factor = 100.0
+try:
+    nudge_factor = float(sys.argv[1])
+except:
+    nudge_factor = 100.0
 
 t1 = gap / 1e9
 t2 = 0.21
@@ -78,11 +82,11 @@ snr_t1 = snr_t2 * t1**beta / t2**beta
 dtd_itp = get_dtd(gap, beta, normalisation=snr_t1)
 
 
-t = np.arange(6.5, 10.5, 0.01)
+t = np.arange(6.5, 10.5, 0.1)
 
 input_sfh_cube = np.load(
-    os.path.join("output", "sfh", "galaxy_sfh_1.npy")
-)
+    os.path.join("output", "sfh", "galaxy_sfh_1.npz")
+)['arr_0']
 # this is a lookback time
 input_age = input_sfh_cube[0]
 # append extra "time" to improve stability of interpolation at the edge
@@ -126,38 +130,32 @@ sn_list_spexel = []
 
 N_sn = 0
 
-
-
 for i in range(1000):
 
     print(i)
 
     galaxy_data_cube = np.load(
-        os.path.join("output", "spectrum", "galaxy_{}.npy".format(i))
-    )
+        os.path.join("output", "spectrum", "galaxy_{}.npz".format(i))
+    )['arr_0']
     wave = galaxy_data_cube[0]
     input_sfh_cube = np.load(
-        os.path.join("output", "sfh", "galaxy_sfh_{}.npy".format(i))
-    )
-    # this is a lookback time
-    input_age = input_sfh_cube[0]
-    # append extra "time" to improve stability of interpolation at the edge
-    input_age = np.append(input_age, [10.52, 10.54, 10.56, 10.58, 10.60])
+        os.path.join("output", "sfh", "galaxy_sfh_{}.npz".format(i))
+    )['arr_0']
 
     for j, spexels in enumerate(n_spexels):
 
         if j == 0:
-            spexels_skip = 1
+            spexels_skip = 0
         else:
-            spexels_skip = np.sum(n_spexels[:j]) + 1
+            spexels_skip = np.sum(n_spexels[:j])
 
         # j=0 is the age
         input_sfh = input_sfh_cube[j+1]
         input_sfh = np.append(input_sfh, [min(input_sfh)] * 5)
-
         sfr_itp = itp.interp1d(
             10.0**input_age, input_sfh, kind=3, fill_value="extrapolate"
         )
+
         # the integral limits are the lookback time
         # sfr_itp uses lookback time
         rate = itg.quad(
@@ -179,11 +177,13 @@ for i in range(1000):
         prob_1 = lamb * prob_0
         prob_2 = lamb ** 2.0 * prob_0 / 2.0
         prob_3 = lamb ** 3.0 * prob_0 / 6.0
-        prob_4 = 1 - prob_0 - prob_1 - prob_2 - prob_3
+        prob_4 = lamb ** 4.0 * prob_0 / 24.0
+        prob_5 = lamb ** 5.0 * prob_0 / 120.0
+        prob_6 = 1 - prob_0 - prob_1 - prob_2 - prob_3 - prob_4 - prob_5
 
         for spx in range(spexels):
 
-            spexel_idx = 1 + spexels_skip + spx
+            spexel_idx = spexels_skip + spx
             rnd = np.random.random()
 
             if prob_0 > rnd:
@@ -194,46 +194,37 @@ for i in range(1000):
                 N_sn += 1
                 print("BOOM! {}-th SN!".format(N_sn))
             elif prob_0 + prob_1 + prob_2 > rnd:
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
+                for _ in range(2):
+                    sn_list_galaxy.append(i)
+                    sn_list_spexel.append(spexel_idx)
+                    N_sn += 1
+                    print("BOOM! {}-th SN!".format(N_sn))
             elif prob_0 + prob_1 + prob_2 + prob_3 > rnd:
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
+                for _ in range(3):
+                    sn_list_galaxy.append(i)
+                    sn_list_spexel.append(spexel_idx)
+                    N_sn += 1
+                    print("BOOM! {}-th SN!".format(N_sn))
+            elif prob_0 + prob_1 + prob_2 + prob_3 + prob_4 > rnd:
+                for _ in range(4):
+                    sn_list_galaxy.append(i)
+                    sn_list_spexel.append(spexel_idx)
+                    N_sn += 1
+                    print("BOOM! {}-th SN!".format(N_sn))
+            elif prob_0 + prob_1 + prob_2 + prob_3 + prob_4 + prob_5 > rnd:
+                for _ in range(5):
+                    sn_list_galaxy.append(i)
+                    sn_list_spexel.append(spexel_idx)
+                    N_sn += 1
+                    print("BOOM! {}-th SN!".format(N_sn))
             else:
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
-                sn_list_galaxy.append(i)
-                sn_list_spexel.append(spexel_idx)
-                N_sn += 1
-                print("BOOM! {}-th SN!".format(N_sn))
+                for _ in range(6):
+                    sn_list_galaxy.append(i)
+                    sn_list_spexel.append(spexel_idx)
+                    N_sn += 1
+                    print("BOOM! {}-th SN!".format(N_sn))
 
 np.save(
-    os.path.join("output", "sn_list"),
+    os.path.join("output", f"sn_list_rate_multiplier_{int(nudge_factor)}"),
     np.column_stack((sn_list_galaxy, sn_list_spexel)),
 )

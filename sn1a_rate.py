@@ -11,7 +11,7 @@ import pandas
 from matplotlib import pyplot as plt
 import numpy as np
 
-filelist = glob.glob("tns-sn1a-20221012/tns_search*.csv")
+filelist = glob.glob("tns-sn1a-20230416/tns_search*.csv")
 _file = []
 for filename in filelist:
     _file.append(pandas.read_csv(filename))
@@ -26,17 +26,22 @@ sn_table["Discovery Date (UT)"] = sn_table["Discovery Date (UT)"].astype(
 sn_table.set_index("Discovery Date (UT)", inplace=True)
 histogram_all_sn = sn_table.resample("1Y").size()
 
-red_shift = sn_table["Host Redshift"].values
-red_shift_mask = (red_shift > 0.0)
+red_shift = sn_table["Redshift"].values
+host_red_shift = sn_table["Host Redshift"].values
+red_shift_mask = (red_shift <= 0.125) | (host_red_shift <= 0.125)
 
-sn_table_basic_filtered = sn_table[red_shift_mask]
+sn_table_low_redshift = sn_table[red_shift_mask]
+sn_table_basic_filtered = sn_table
 
 vizier_results = []
-
-for ra, dec in zip(sn_table_basic_filtered['RA'].values, sn_table_basic_filtered['DEC'].values):
+v = Vizier(columns=["**"], catalog="J/AJ/154/86")
+for ra, dec in zip(
+    sn_table_basic_filtered["RA"].values, sn_table_basic_filtered["DEC"].values
+):
     try:
-        pos = coords.SkyCoord(ra, dec, frame='icrs', unit=(u.hourangle, u.deg))
-        res = Vizier.query_region(pos, radius=Angle(0.5, "deg"), catalog='J/AJ/154/86')
+        pos = coords.SkyCoord(ra, dec, frame="icrs", unit=(u.hourangle, u.deg))
+        # This is to get everything that can fit into a 127-Fiber IFU
+        res = v.query_region(pos, radius=Angle(32.0, "arcsec"))
         if len(res) > 0:
             vizier_results.append(res)
         else:
@@ -45,12 +50,44 @@ for ra, dec in zip(sn_table_basic_filtered['RA'].values, sn_table_basic_filtered
         vizier_results.append(None)
 
 vizier_results = np.array(vizier_results)
-vizier_mask = (np.array(vizier_results) != None)
-
-
+vizier_mask = np.array(vizier_results) != None
+manga_catalogue = vizier_results[vizier_mask]
 manga_sample = sn_table_basic_filtered[vizier_mask]
 
-histogram_manga_sn = manga_sample.resample("1Y").size()
+
+fibre_to_sep = {
+    "7": 7.0,
+    "19": 12.0,
+    "37": 17.0,
+    "61": 22.0,
+    "91": 27.0,
+    "127": 32.0,
+}
+
+IFU_mask = []
+# Filter based on the IFU-size returned from Vizier
+for i, manga in enumerate(manga_catalogue):
+    pos_galaxy = coords.SkyCoord(
+        manga_sample["RA"].values[i],
+        manga_sample["DEC"].values[i],
+        frame="icrs",
+        unit=(u.hourangle, u.deg),
+    )
+    matched_ifudsgn = manga[0]["IFUdsgn"].value.data
+    ra = manga[0]["RAJ2000"].value.data
+    dec = manga[0]["DEJ2000"].value.data
+    _contain_sn = False
+    for j, ifu in enumerate(matched_ifudsgn):
+        n_fibre = ifu[:-2]
+        pos_sn = coords.SkyCoord(
+            ra[j], dec[j], frame="icrs", unit=(u.deg, u.deg)
+        )
+        if pos_galaxy.separation(pos_sn) <= fibre_to_sep[n_fibre] * u.arcsec:
+            _contain_sn = True
+    if _contain_sn:
+        IFU_mask.append(True)
+    else:
+        IFU_mask.append(False)
 
 
 """
@@ -79,27 +116,48 @@ z_lower = (A_lower + B_lower * (Mi - 5.0 * np.log10(h))) * (
 )
 """
 
+
+# Apply the mask and then create a histogram
+histogram_manga_sn = manga_sample[IFU_mask].resample("1Y").size()
+histogram_manga_sn_2y = manga_sample[IFU_mask].resample("2Y").size()
+
 PTF_start = date(year=2009, month=6, day=1)
 PTF_end = date(year=2013, month=1, day=1)
 iPTF_start = date(year=2013, month=1, day=1)
 iPTF_end = date(year=2016, month=1, day=1)
 ZTF_start = date(year=2018, month=6, day=1)
-ZTF_end = date(year=2023, month=1, day=1)
+ZTF_end = date(year=2023, month=4, day=1)
 
+time = np.arange(1998, 2023, 2)
+log_n_sn = np.log10(histogram_manga_sn_2y[:-1] / 2.0)
+
+mask = log_n_sn > 0
+
+coeff = np.polyfit(time[mask], log_n_sn[mask], 1)
+predicted = 10.0 ** np.polyval(coeff, time)
 
 plt.figure(1, figsize=(8, 8))
 plt.clf()
-plt.plot(histogram_all_sn, label="No. of SNe in that year")
-plt.plot(histogram_manga_sn, label="No. of SNe in that year in the MaNGA sample")
+plt.plot(histogram_all_sn, label="No. of SN Ia in that year")
+plt.plot(
+    histogram_manga_sn, label="No. of SN Ia in that year in the MaNGA sample"
+)
+plt.plot(
+    [date(year=i, month=1, day=1) for i in range(1935, 2024)],
+    10.0 ** np.polyval(coeff, np.arange(1935, 2024)),
+    label="Fitted trend",
+)
 plt.axvspan(PTF_start, PTF_end, alpha=0.2, color="red", label="PTF")
 plt.axvspan(iPTF_start, iPTF_end, alpha=0.2, color="green", label="iPTF")
 plt.axvspan(ZTF_start, ZTF_end, alpha=0.2, color="blue", label="ZTF")
 plt.xlabel("Year")
-plt.ylabel("Number of SN Ia discovered")
+plt.ylabel("Number of SN Ia Discovered")
 plt.yscale("log")
 plt.title("Number of SN Ia Discovery")
 plt.legend()
 plt.tight_layout()
 plt.grid()
-plt.xlim(right=date(year=2023, month=1, day=1))
+plt.xlim(
+    left=date(year=1935, month=1, day=1), right=date(year=2023, month=4, day=1)
+)
 plt.savefig("sn1a_rate.png")

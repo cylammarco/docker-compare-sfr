@@ -115,7 +115,7 @@ def get_uncertainty(
         pp = ppxf(
             templates_corrected,
             galaxy_noise_added,
-            residual,
+            noise_rescaled,
             velscale_rebinned,
             start,
             goodpixels=goodpixels,
@@ -166,7 +166,7 @@ def get_uncertainty(
 
 
 ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-miles_pathname = os.path.join(ppxf_dir, "miles_models", "Eun1.30Z*.fits")
+miles_pathname = os.path.join(ppxf_dir, "fsps_generated_template", "Eun1.30Z*.fits")
 
 
 # speed of light
@@ -175,13 +175,13 @@ c = constants.c.to("km/s").value
 FWHM_gal = (
     2.76  # SDSS has an approximate instrumental resolution FWHM of 2.76A.
 )
-wave_new = np.arange(3600.0, 7500.0, FWHM_gal)
+wave_new = np.arange(3600.0, 7385.0, FWHM_gal)
 velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
 
 filename = os.path.join(
     "output",
     "exponential_rise_decay_with_noise",
-    "spectrum_1.0_gyr_2.0_rise_decay_with_noise_10.npy",
+    "spectrum_1.0_gyr_2.0_rise_decay_1.0_zsolar_with_noise_10.npy",
 )
 wave, _galaxy, error = np.load(filename, allow_pickle=True).T
 
@@ -218,7 +218,7 @@ n_temps = stars_templates.shape[1]
 # COMPONENT value
 #
 templates = stars_templates
-
+templates /= np.nanmedian(templates)
 
 # Fit (V, sig, h3, h4) moments=4 for the stars
 # and (V, sig) moments=2 for the two gas kinematic components
@@ -234,340 +234,345 @@ component = [0] * n_temps
 
 tau = 2.0
 
-for sn in ["10", "20", "50"]:
-    for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
-        filename = os.path.join(
-            "output",
-            "exponential_rise_decay_with_noise",
-            f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay_with_noise_{sn}.npy",
-        )
+# equivalent to [Z] = -0.3, -0.15, 0.0, 0.15, 0.3
+# see Figure 4 of https://academic.oup.com/mnras/article/508/4/4844/6385769
+# These are the multiplier of solar metallicity.
+metallicity_list = [0.5, 0.7, 1.0, 1.4, 2.0]
 
-        wave, galaxy, galaxy_err = np.load(filename, allow_pickle=True).T
-        galaxy, galaxy_err = spectres(wave_new, wave, galaxy, galaxy_err)
+for metallicity in metallicity_list:
+    for sn in ["10", "20", "50"]:
+        for age in [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]:
+            filename = os.path.join(
+                "output",
+                "exponential_rise_decay_with_noise",
+                f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay_{metallicity:.1f}_zsolar_with_noise_{sn}.npy",
+            )
 
-        # natural log
-        (
-            galaxy_log_rebinned,
-            wave_rebinned,
-            velscale_rebinned,
-        ) = util.log_rebin(wave_new, galaxy, velscale=velscale, flux=False)
-        (
-            noise,
-            wave_rebinned,
-            velscale_rebinned,
-        ) = util.log_rebin(wave_new, galaxy_err, velscale=velscale, flux=False)
-        goodpixels = np.arange(len(galaxy_log_rebinned))[1:]
+            wave, galaxy, galaxy_err = np.load(filename, allow_pickle=True).T
+            galaxy, galaxy_err = spectres(wave_new, wave, galaxy, galaxy_err)
 
-        start = [100.0, 10.0, h3, h4]
-        fixed = [0, 0, 1, 1]
+            # natural log
+            (
+                galaxy_log_rebinned,
+                wave_rebinned,
+                velscale_rebinned,
+            ) = util.log_rebin(wave_new, galaxy, velscale=velscale, flux=False)
+            (
+                noise,
+                wave_rebinned,
+                velscale_rebinned,
+            ) = util.log_rebin(wave_new, galaxy_err, velscale=velscale, flux=False)
+            goodpixels = np.arange(len(galaxy_log_rebinned))[1:]
 
-        # step (i) of Kacharov et al. 2018
-        # Get the kinematics
-        _pp1 = ppxf(
-            templates,
-            galaxy_log_rebinned,
-            noise,
-            velscale_rebinned,
-            start,
-            goodpixels=goodpixels,
-            plot=False,
-            moments=moments,
-            degree=10,
-            mdegree=10,
-            fixed=fixed,
-            clean=False,
-            ftol=1e-8,
-            lam=np.exp(wave_rebinned),
-            lam_temp=np.exp(miles.ln_lam_temp),
-            linear_method="lsq_box",
-            bias=None,
-            component=component,
-        )
+            start = [100.0, 10.0, h3, h4]
+            fixed = [0, 0, 1, 1]
 
-        start = _pp1.sol
-        fixed = [1, 1, 1, 1]
+            # step (i) of Kacharov et al. 2018
+            # Get the kinematics
+            _pp1 = ppxf(
+                templates,
+                galaxy_log_rebinned,
+                noise,
+                velscale_rebinned,
+                start,
+                goodpixels=goodpixels,
+                plot=False,
+                moments=moments,
+                degree=10,
+                mdegree=10,
+                fixed=fixed,
+                clean=False,
+                ftol=1e-8,
+                lam=np.exp(wave_rebinned),
+                lam_temp=np.exp(miles.ln_lam_temp),
+                linear_method="lsq_box",
+                bias=None,
+                component=component,
+            )
 
-        # Step (iii) of Kacharov et al. 2018
-        # Perform an unregularised fit, with a 10th order multiplicative polynomial
-        _pp2 = ppxf(
-            templates,
-            galaxy_log_rebinned,
-            noise,
-            velscale_rebinned,
-            start,
-            goodpixels=goodpixels,
-            plot=False,
-            moments=moments,
-            degree=-1,
-            mdegree=10,
-            fixed=fixed,
-            clean=False,
-            ftol=1e-8,
-            lam=np.exp(wave_rebinned),
-            lam_temp=np.exp(miles.ln_lam_temp),
-            linear_method="lsq_box",
-            regul=0,
-            bias=None,
-            component=component,
-        )
+            start = _pp1.sol
+            fixed = [1, 1, 1, 1]
 
-        # Rescale the noise so that reduced chi2 becomes 1
-        noise_rescaled = noise * np.sqrt(_pp2.chi2)
-        delta_chi2 = np.sqrt(2 * goodpixels.size)
+            # Step (iii) of Kacharov et al. 2018
+            # Perform an unregularised fit, with a 10th order multiplicative polynomial
+            _pp2 = ppxf(
+                templates,
+                galaxy_log_rebinned,
+                noise,
+                velscale_rebinned,
+                start,
+                goodpixels=goodpixels,
+                plot=False,
+                moments=moments,
+                degree=-1,
+                mdegree=10,
+                fixed=fixed,
+                clean=False,
+                ftol=1e-8,
+                lam=np.exp(wave_rebinned),
+                lam_temp=np.exp(miles.ln_lam_temp),
+                linear_method="lsq_box",
+                regul=0,
+                bias=None,
+                component=component,
+            )
 
-        desired_chi2 = (goodpixels.size + delta_chi2) / goodpixels.size
+            # Rescale the noise so that reduced chi2 becomes 1
+            noise_rescaled = noise * np.sqrt(_pp2.chi2)
+            delta_chi2 = np.sqrt(2 * goodpixels.size)
 
-        x = np.linspace(-1, 1, len(miles.ln_lam_temp))
-        mpoly = legendre.legval(x, np.append(1, _pp2.mpolyweights))
+            desired_chi2 = (goodpixels.size + delta_chi2) / goodpixels.size
 
-        # Correct the templates with the multiplicative polynomial
-        stars_templates_corrected = stars_templates.T * mpoly
-        templates_corrected = stars_templates_corrected.T
+            mpoly = _pp2.mpoly
 
-        _pp3 = ppxf(
-            templates_corrected,
-            galaxy_log_rebinned,
-            noise_rescaled,
-            velscale_rebinned,
-            start,
-            goodpixels=goodpixels,
-            plot=False,
-            moments=moments,
-            degree=-1,
-            mdegree=0,
-            fixed=fixed,
-            clean=False,
-            ftol=1e-8,
-            lam=np.exp(wave_rebinned),
-            lam_temp=np.exp(miles.ln_lam_temp),
-            linear_method="lsq_box",
-            regul=0,
-            bias=None,
-            component=component,
-        )
+            # Correct the templates with the multiplicative polynomial
+            stars_templates_corrected = stars_templates.T / mpoly
+            templates_corrected = stars_templates_corrected.T
 
-        noise_rescaled_2 = noise_rescaled * np.sqrt(_pp3.chi2)
+            _pp3 = ppxf(
+                templates_corrected,
+                galaxy_log_rebinned,
+                noise_rescaled,
+                velscale_rebinned,
+                start,
+                goodpixels=goodpixels,
+                plot=False,
+                moments=moments,
+                degree=-1,
+                mdegree=0,
+                fixed=fixed,
+                clean=False,
+                ftol=1e-8,
+                lam=np.exp(wave_rebinned),
+                lam_temp=np.exp(miles.ln_lam_temp),
+                linear_method="lsq_box",
+                regul=0,
+                bias=None,
+                component=component,
+            )
 
-        # Step (iv) of Kacharov et al. 2018
-        results = minimize(
-            find_reg,
-            np.log10(1e-2),
-            args=(
+            noise_rescaled_2 = noise_rescaled * np.sqrt(_pp3.chi2)
+
+            # Step (iv) of Kacharov et al. 2018
+            results = minimize(
+                find_reg,
+                np.log10(1e-2),
+                args=(
+                    templates_corrected,
+                    galaxy_log_rebinned,
+                    noise_rescaled_2,
+                    velscale_rebinned,
+                    start,
+                    goodpixels,
+                    False,
+                    moments,
+                    -1,
+                    0,
+                    fixed,
+                    False,
+                    1e-8,
+                    np.exp(wave_rebinned),
+                    np.exp(miles.ln_lam_temp),
+                    "lsq_box",
+                    1,
+                    None,
+                    reg_dim,
+                    component,
+                    desired_chi2,
+                ),
+                tol=1e-8,
+                method="Powell",
+                options={"ftol": 1e-8, "xtol": 1e-8},
+            )
+            best_reg = 10.0 ** results.x[0]
+
+            # Get the residuals for resampling for noise estimation
+            pp = ppxf(
                 templates_corrected,
                 galaxy_log_rebinned,
                 noise_rescaled_2,
                 velscale_rebinned,
                 start,
-                goodpixels,
-                False,
-                moments,
-                -1,
-                0,
-                fixed,
-                False,
-                1e-8,
+                goodpixels=goodpixels,
+                plot=False,
+                moments=moments,
+                degree=-1,
+                mdegree=0,
+                fixed=fixed,
+                clean=False,
+                ftol=1e-8,
+                lam=np.exp(wave_rebinned),
+                lam_temp=np.exp(miles.ln_lam_temp),
+                linear_method="lsq_box",
+                regul=best_reg,
+                reg_ord=1,
+                bias=None,
+                reg_dim=reg_dim,
+                component=component,
+            )
+
+            # Resampling 100 times using the residuals
+            (
+                galaxy_bootstrap,
+                light_weight_bootstrap,
+                mass_weight_bootstrap,
+                sfr_light_bootstrap,
+                sfr_mass_bootstrap,
+            ) = get_uncertainty(
+                templates_corrected,
+                galaxy_log_rebinned,
+                noise_rescaled_2,
+                velscale_rebinned,
+                start,
+                goodpixels=goodpixels,
+                plot=False,
+                moments=moments,
+                degree=-1,
+                mdegree=0,
+                fixed=fixed,
+                clean=False,
+                ftol=1e-8,
+                lam=np.exp(wave_rebinned),
+                lam_temp=np.exp(miles.ln_lam_temp),
+                linear_method="lsq_box",
+                regul=best_reg,
+                reg_ord=1,
+                bias=None,
+                reg_dim=reg_dim,
+                component=component,
+                residual=np.abs(galaxy_log_rebinned - _pp1.bestfit),
+            )
+
+            light_weights = pp.weights  # Exclude gas templates weights
+            light_weights = light_weights.reshape(
+                reg_dim
+            )  # Reshape to a 2D matrix
+
+            # convert from light to mass, hence 1./Mass-to-light
+            mass_weights = light_weights / miles.flux
+            mass_weights[np.isnan(mass_weights)] = 0.0
+
+            sfr_light = np.sum(light_weights, axis=1)
+            sfr_light[np.isnan(sfr_light)] = 0.0
+
+            sfr_mass = np.sum(mass_weights, axis=1)
+            sfr_mass[np.isnan(sfr_mass)] = 0.0
+
+            age_grid = miles.age_grid[:, 0]
+            metal_grid = miles.metal_grid.T[:, 0]
+
+            gs = gridspec.GridSpec(4, 1, height_ratios=[4, 1, 4, 4])
+
+            fig = plt.figure(1, figsize=(10, 12))
+            plt.clf()
+            ax1 = plt.subplot(gs[0])
+            ax3 = plt.subplot(gs[2])
+            ax4 = plt.subplot(gs[3])
+
+            ax1.plot(np.exp(wave_rebinned), galaxy_log_rebinned, label="Input")
+            ax1.fill_between(
                 np.exp(wave_rebinned),
-                np.exp(miles.ln_lam_temp),
-                "lsq_box",
-                1,
-                None,
-                reg_dim,
-                component,
-                desired_chi2,
-            ),
-            tol=1e-8,
-            method="Powell",
-            options={"ftol": 1e-8, "xtol": 1e-8},
-        )
-        best_reg = 10.0 ** results.x[0]
+                galaxy_log_rebinned - noise,
+                galaxy_log_rebinned + noise,
+                alpha=0.5,
+                color="grey",
+                zorder=2,
+                label="Error Range",
+            )
+            ax1.plot(
+                np.exp(wave_rebinned),
+                pp.bestfit,
+                color="black",
+                label="Fitted",
+            )
+            ax1.scatter(
+                np.exp(wave_rebinned),
+                galaxy_log_rebinned - pp.bestfit,
+                color="green",
+                s=2,
+                label="Residual",
+            )
+            ax1.grid()
+            ax1.set_xlim(min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned)))
+            ax1.set_xlabel("Wavelength / A")
+            ax1.set_ylabel("Relative Flux")
+            ax1.legend()
 
-        # Get the residuals for resampling for noise estimation
-        pp = ppxf(
-            templates_corrected,
-            galaxy_log_rebinned,
-            noise_rescaled_2,
-            velscale_rebinned,
-            start,
-            goodpixels=goodpixels,
-            plot=False,
-            moments=moments,
-            degree=-1,
-            mdegree=0,
-            fixed=fixed,
-            clean=False,
-            ftol=1e-7,
-            lam=np.exp(wave_rebinned),
-            lam_temp=np.exp(miles.ln_lam_temp),
-            linear_method="lsq_box",
-            regul=best_reg,
-            reg_ord=1,
-            bias=None,
-            reg_dim=reg_dim,
-            component=component,
-        )
-
-        # Resampling 100 times using the residuals
-        (
-            galaxy_bootstrap,
-            light_weight_bootstrap,
-            mass_weight_bootstrap,
-            sfr_light_bootstrap,
-            sfr_mass_bootstrap,
-        ) = get_uncertainty(
-            templates_corrected,
-            pp.bestfit,
-            noise_rescaled_2,
-            velscale_rebinned,
-            start,
-            goodpixels=goodpixels,
-            plot=False,
-            moments=moments,
-            degree=-1,
-            mdegree=0,
-            fixed=fixed,
-            clean=False,
-            ftol=1e-8,
-            lam=np.exp(wave_rebinned),
-            lam_temp=np.exp(miles.ln_lam_temp),
-            linear_method="lsq_box",
-            regul=best_reg,
-            reg_ord=1,
-            bias=None,
-            reg_dim=reg_dim,
-            component=component,
-            residual=np.abs(galaxy_log_rebinned - pp.bestfit),
-        )
-
-        light_weights = pp.weights  # Exclude gas templates weights
-        light_weights = light_weights.reshape(
-            reg_dim
-        )  # Reshape to a 2D matrix
-
-        # convert from light to mass, hence 1./Mass-to-light
-        mass_weights = light_weights / miles.flux
-        mass_weights[np.isnan(mass_weights)] = 0.0
-
-        sfr_light = np.sum(light_weights, axis=1)
-        sfr_light[np.isnan(sfr_light)] = 0.0
-
-        sfr_mass = np.sum(mass_weights, axis=1)
-        sfr_mass[np.isnan(sfr_mass)] = 0.0
-
-        age_grid = miles.age_grid[:, 0]
-        metal_grid = miles.metal_grid.T[:, 0]
-
-        gs = gridspec.GridSpec(4, 1, height_ratios=[4, 1, 4, 4])
-
-        fig = plt.figure(1, figsize=(10, 12))
-        plt.clf()
-        ax1 = plt.subplot(gs[0])
-        ax3 = plt.subplot(gs[2])
-        ax4 = plt.subplot(gs[3])
-
-        ax1.plot(np.exp(wave_rebinned), galaxy_log_rebinned, label="Input")
-        ax1.fill_between(
-            np.exp(wave_rebinned),
-            galaxy_log_rebinned - noise,
-            galaxy_log_rebinned + noise,
-            alpha=0.5,
-            color="grey",
-            zorder=2,
-            label="Error Range",
-        )
-        ax1.plot(
-            np.exp(wave_rebinned),
-            pp.bestfit,
-            color="black",
-            label="Fitted",
-        )
-        ax1.scatter(
-            np.exp(wave_rebinned),
-            galaxy_log_rebinned - pp.bestfit,
-            color="green",
-            s=2,
-            label="Residual",
-        )
-        ax1.grid()
-        ax1.set_xlim(min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned)))
-        ax1.set_xlabel("Wavelength / A")
-        ax1.set_ylabel("Relative Flux")
-        ax1.legend()
-
-        im = NonUniformImage(
-            ax3,
-            interpolation="nearest",
-            extent=(
+            im = NonUniformImage(
+                ax3,
+                interpolation="nearest",
+                extent=(
+                    (1.5 * age_grid[0] - 0.5 * age_grid[1]),
+                    (1.5 * age_grid[-1] - 0.5 * age_grid[-2]),
+                    metal_grid[0] - 0.5,
+                    metal_grid[0] + 0.5,
+                ),
+            )
+            x_ax3 = age_grid
+            y_ax3 = metal_grid
+            im.set_data(x_ax3, y_ax3, light_weights.T)
+            ax3.images.append(im)
+            ax3.set_xticklabels([""])
+            ax3.set_ylabel("Metallicity")
+            ax3.set_xlim(
                 (1.5 * age_grid[0] - 0.5 * age_grid[1]),
                 (1.5 * age_grid[-1] - 0.5 * age_grid[-2]),
+            )
+            ax3.set_yticks(metal_grid)
+            ax3.set_yticklabels(metal_grid)
+            ax3.set_ylim(
                 metal_grid[0] - 0.5,
                 metal_grid[0] + 0.5,
-            ),
-        )
-        x_ax3 = age_grid
-        y_ax3 = metal_grid
-        im.set_data(x_ax3, y_ax3, light_weights.T)
-        ax3.images.append(im)
-        ax3.set_xticklabels([""])
-        ax3.set_ylabel("Metallicity")
-        ax3.set_xlim(
-            (1.5 * age_grid[0] - 0.5 * age_grid[1]),
-            (1.5 * age_grid[-1] - 0.5 * age_grid[-2]),
-        )
-        ax3.set_yticks(metal_grid)
-        ax3.set_yticklabels(metal_grid)
-        ax3.set_ylim(
-            metal_grid[0] - 0.5,
-            metal_grid[0] + 0.5,
-        )
+            )
 
-        t_lookback = 10.0 ** np.arange(5.0, 10.2, 0.001)
-        sfh = np.exp(-np.abs(age * 1.0e9 - t_lookback) / (tau * 1.0e9))
-        sfh /= max(sfh)
+            t_lookback = 10.0 ** np.arange(5.0, 10.2, 0.001)
+            sfh = np.exp(-np.abs(age * 1.0e9 - t_lookback) / (tau * 1.0e9))
+            sfh /= max(sfh)
 
-        ax4.plot(t_lookback / 1e9, sfh, label="Input")
+            ax4.plot(t_lookback / 1e9, sfh, label="Input")
 
-        ax4.plot(
-            age_grid,
-            sfr_light / np.nanmax(sfr_light),
-            label="Recovered (light-weighted)",
-        )
-        for _sfr in sfr_mass_bootstrap:
             ax4.plot(
                 age_grid,
-                _sfr / np.nanmax(_sfr),
-                color="grey",
-                alpha=0.1,
-                zorder=15,
+                sfr_light / np.nanmax(sfr_light),
+                label="Recovered (light-weighted)",
             )
-        sfr_median = np.nanmedian(sfr_mass_bootstrap, axis=0)
-        sfr_mass_err = (
-            np.nanmedian(np.abs(sfr_mass_bootstrap - sfr_median), axis=0)
-            * 1.4826
-        )
-        ax4.errorbar(
-            age_grid,
-            sfr_mass / np.nanmax(sfr_mass),
-            yerr=sfr_mass_err / np.nanmax(sfr_mass),
-            label="Recovered (mass-weighted)",
-            capsize=5,
-            elinewidth=2,
-        )
-        ax4.set_xlim(np.nanmin(age_grid), np.nanmax(age_grid))
-        ax4.grid()
-        ax4.set_ylabel("Relative Star Formation Rate")
-        ax4.set_xlabel("Age / Gyr")
-        ax4.legend()
-
-        plt.subplots_adjust(
-            top=0.975, bottom=0.05, left=0.08, right=0.95, hspace=0
-        )
-        plt.ion()
-        plt.show()
-
-        plt.savefig(
-            os.path.join(
-                "output",
-                "exponential_rise_decay_with_noise",
-                f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay_with_noise_{sn}_fitted.png",
+            for _sfr in sfr_mass_bootstrap:
+                ax4.plot(
+                    age_grid,
+                    _sfr / np.nanmax(_sfr),
+                    color="grey",
+                    alpha=0.1,
+                    zorder=15,
+                )
+            sfr_median = np.nanmedian(sfr_mass_bootstrap, axis=0)
+            sfr_mass_err = (
+                np.nanmedian(np.abs(sfr_mass_bootstrap - sfr_median), axis=0)
+                * 1.4826
             )
-        )
+            ax4.errorbar(
+                age_grid,
+                sfr_mass / np.nanmax(sfr_mass),
+                yerr=sfr_mass_err / np.nanmax(sfr_mass),
+                label="Recovered (mass-weighted)",
+                capsize=5,
+                elinewidth=2,
+            )
+            ax4.set_xlim(np.nanmin(age_grid), np.nanmax(age_grid))
+            ax4.grid()
+            ax4.set_ylabel("Relative Star Formation Rate")
+            ax4.set_xlabel("Age / Gyr")
+            ax4.legend()
+
+            plt.subplots_adjust(
+                top=0.975, bottom=0.05, left=0.08, right=0.95, hspace=0
+            )
+            plt.ion()
+            plt.show()
+
+            plt.savefig(
+                os.path.join(
+                    "output",
+                    "exponential_rise_decay_with_noise",
+                    f"spectrum_{age:.1f}_gyr_{tau:.1f}_rise_decay_{metallicity:.1f}_zsolar_with_noise_{sn}_fitted.png",
+                )
+            )

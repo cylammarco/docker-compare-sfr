@@ -30,12 +30,21 @@ sp = fsps.StellarPopulation(
     compute_vega_mags=False,
     zcontinuous=1,
     sfh=0,
+    imf_type=0,
+    masscut=100.0,
     add_agb_dust_model=False,
     add_dust_emission=False,
     add_igm_absorption=False,
     add_neb_emission=False,
     add_neb_continuum=False,
     nebemlineinspec=False,
+    dust_type=1,
+    uvb=0.0,
+    dust_tesc=5.51,
+    dust1=0.0,
+    dust2=0.0,
+    dust_index=0.0,
+    dust1_index=0.0,
 )
 sp.params["logzsol"] = 0.0
 sn_10 = 10.0
@@ -49,107 +58,112 @@ wave_new = np.arange(3500.0, 8500.0, FWHM_gal)
 age_list = [0.5, 1.0, 2.0, 4.0, 5.0, 6.0, 7.0, 11.0]
 
 # age = lookback time
+# equivalent to [Z] = -0.3, -0.15, 0.0, 0.15, 0.3
+# see Figure 4 of https://academic.oup.com/mnras/article/508/4/4844/6385769
+# These are the multiplier of solar metallicity.
+metallicity_list = [0.5, 0.7, 1.0, 1.4, 2.0]
 
-for age in age_list:
-    wave, spectrum = sp.get_spectrum(tage=age, peraa=True)
-    #
-    # resample the spectrum to manga resolution
-    spectrum_new = spectres(wave_new, wave, spectrum)
-    #
-    # add noise
-    noise = np.sqrt(spectrum_new)
-    noise_scale_factor_10 = np.mean(spectrum_new / noise) / sn_10
-    noise_10 = noise * noise_scale_factor_10
-    noise_scale_factor_20 = np.mean(spectrum_new / noise) / sn_20
-    noise_20 = noise * noise_scale_factor_20
-    noise_scale_factor_50 = np.mean(spectrum_new / noise) / sn_50
-    noise_50 = noise * noise_scale_factor_50
-    spectrum_new_with_noise_10 = np.random.normal(loc=spectrum_new, scale=noise_10)
-    spectrum_new_with_noise_20 = np.random.normal(loc=spectrum_new, scale=noise_20)
-    spectrum_new_with_noise_50 = np.random.normal(loc=spectrum_new, scale=noise_50)
-    data_out_10 = np.column_stack((wave_new, spectrum_new, noise_10))
-    data_out_20 = np.column_stack((wave_new, spectrum_new, noise_20))
-    data_out_50 = np.column_stack((wave_new, spectrum_new, noise_50))
-    data_with_noise_out_10 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_10, noise_10)
-    )
-    data_with_noise_out_20 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_20, noise_20)
-    )
-    data_with_noise_out_50 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_50, noise_50)
-    )
-    #
-    #
-    data_out = np.column_stack(
-        (wave_new, spectrum_new, np.ones_like(spectrum_new) * 1e-6)
-    )
-    data_with_noise_out_10 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_10, noise_10)
-    )
-    data_with_noise_out_20 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_20, noise_20)
-    )
-    data_with_noise_out_50 = np.column_stack(
-        (wave_new, spectrum_new_with_noise_50, noise_50)
-    )
-    # save noiseless data
-    np.save(
-        os.path.join(
-            "output",
-            "simple_bursts",
-            f"spectrum_{age}_gyr"
-        ),
-        data_out,
-    )
-    plt.figure(1)
-    plt.clf()
-    plt.plot(wave_new, spectrum_new)
-    plt.xlabel("Wavelength / A")
-    plt.ylabel("Flux per A")
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            "output",
-            "simple_bursts",
-            f"spectrum_{age}_gyr.png"
+for metallicity in metallicity_list:
+    for age in age_list:
+        wave, spectrum = sp.get_spectrum(tage=age, peraa=True)
+        #
+        # resample the spectrum to manga resolution
+        spectrum_new = spectres(wave_new, wave, spectrum)
+        #
+        # add noise
+        noise = np.sqrt(spectrum_new)
+        noise_scale_factor_10 = np.mean(spectrum_new / noise) / sn_10
+        noise_10 = noise * noise_scale_factor_10
+        noise_scale_factor_20 = np.mean(spectrum_new / noise) / sn_20
+        noise_20 = noise * noise_scale_factor_20
+        noise_scale_factor_50 = np.mean(spectrum_new / noise) / sn_50
+        noise_50 = noise * noise_scale_factor_50
+        spectrum_new_with_noise_10 = np.random.normal(loc=spectrum_new, scale=noise_10)
+        spectrum_new_with_noise_20 = np.random.normal(loc=spectrum_new, scale=noise_20)
+        spectrum_new_with_noise_50 = np.random.normal(loc=spectrum_new, scale=noise_50)
+        data_out_10 = np.column_stack((wave_new, spectrum_new, noise_10))
+        data_out_20 = np.column_stack((wave_new, spectrum_new, noise_20))
+        data_out_50 = np.column_stack((wave_new, spectrum_new, noise_50))
+        data_with_noise_out_10 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_10, noise_10)
         )
-    )
-    # save noisy data
-    np.save(
-        os.path.join(
-            "output",
-            "simple_bursts_with_noise",
-            f"spectrum_{age}_gyr_with_noise_10"
-        ),
-        data_with_noise_out_10,
-    )
-    np.save(
-        os.path.join(
-            "output",
-            "simple_bursts_with_noise",
-            f"spectrum_{age}_gyr_with_noise_20"
-        ),
-        data_with_noise_out_20,
-    )
-    np.save(
-        os.path.join(
-            "output",
-            "simple_bursts_with_noise",
-            f"spectrum_{age}_gyr_with_noise_50"
-        ),
-        data_with_noise_out_50,
-    )
-    plt.figure(2)
-    plt.clf()
-    plt.plot(wave_new, spectrum_new_with_noise_10)
-    plt.xlabel("Wavelength / A")
-    plt.ylabel("Flux per A")
-    plt.tight_layout()
-    plt.savefig(
-        os.path.join(
-            "output",
-            "simple_bursts_with_noise",
-            f"spectrum_{age}_gyr_with_noise_10.png"
+        data_with_noise_out_20 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_20, noise_20)
         )
-    )
+        data_with_noise_out_50 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_50, noise_50)
+        )
+        #
+        #
+        data_out = np.column_stack(
+            (wave_new, spectrum_new, np.ones_like(spectrum_new) * 1e-6)
+        )
+        data_with_noise_out_10 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_10, noise_10)
+        )
+        data_with_noise_out_20 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_20, noise_20)
+        )
+        data_with_noise_out_50 = np.column_stack(
+            (wave_new, spectrum_new_with_noise_50, noise_50)
+        )
+        # save noiseless data
+        np.save(
+            os.path.join(
+                "output",
+                "simple_bursts",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar"
+            ),
+            data_out,
+        )
+        plt.figure(1)
+        plt.clf()
+        plt.plot(wave_new, spectrum_new)
+        plt.xlabel("Wavelength / A")
+        plt.ylabel("Flux per A")
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(
+                "output",
+                "simple_bursts",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar.png"
+            )
+        )
+        # save noisy data
+        np.save(
+            os.path.join(
+                "output",
+                "simple_bursts_with_noise",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar_with_noise_10"
+            ),
+            data_with_noise_out_10,
+        )
+        np.save(
+            os.path.join(
+                "output",
+                "simple_bursts_with_noise",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar_with_noise_20"
+            ),
+            data_with_noise_out_20,
+        )
+        np.save(
+            os.path.join(
+                "output",
+                "simple_bursts_with_noise",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar_with_noise_50"
+            ),
+            data_with_noise_out_50,
+        )
+        plt.figure(2)
+        plt.clf()
+        plt.plot(wave_new, spectrum_new_with_noise_10)
+        plt.xlabel("Wavelength / A")
+        plt.ylabel("Flux per A")
+        plt.tight_layout()
+        plt.savefig(
+            os.path.join(
+                "output",
+                "simple_bursts_with_noise",
+                f"spectrum_{age}_gyr_{metallicity:.1f}_zsolar_with_noise_10.png"
+            )
+        )

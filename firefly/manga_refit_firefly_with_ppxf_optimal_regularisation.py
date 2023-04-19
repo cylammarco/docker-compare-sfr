@@ -1,154 +1,22 @@
+import os
+
 from astropy import constants
 from astropy.io import fits
+import extinction
 import numpy as np
-import os
+from numpy.polynomial import legendre
 import ppxf as ppxf_package
 from ppxf.ppxf import ppxf
 import ppxf.ppxf_util as util
 import ppxf.miles_util as lib
 from spectres import spectres
+from matplotlib.image import NonUniformImage
 from matplotlib import gridspec
 from matplotlib import pyplot as plt
 from scipy.optimize import minimize
+from scipy import interpolate as itp
 
 plt.ion()
-
-data_firefly = fits.open("manga-firefly-v3_1_1-miles.fits.gz")
-firefly_mask = np.where(
-    data_firefly["GALAXY_INFO"].data["PLATEIFU"] == "10001-6104"
-)[0][0]
-
-ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
-miles_pathname = os.path.join(ppxf_dir, "miles_models", "Eun1.30Z*.fits")
-
-
-file_vega = (
-    ppxf_dir + "/miles_models/Vazdekis2012_ssp_phot_Padova00_UN_v10.0.txt"
-)
-file_sdss = (
-    ppxf_dir + "/miles_models/Vazdekis2012_ssp_sdss_miuscat_UN1.30_v9.txt"
-)
-file1 = (
-    ppxf_dir
-    + "/miles_models/Vazdekis2012_ssp_mass_Padova00_UN_baseFe_v10.0.txt"
-)
-
-vega_bands = ["U", "B", "V", "R", "I", "J", "H", "K"]
-sdss_bands = ["u", "g", "r", "i"]
-vega_sun_mag = [5.600, 5.441, 4.820, 4.459, 4.148, 3.711, 3.392, 3.334]
-sdss_sun_mag = [
-    6.55,
-    5.12,
-    4.68,
-    4.57,
-]  # values provided by Elena Ricciardelli
-
-slope1, MH1, Age1, m_no_gas = np.loadtxt(file1, usecols=[1, 2, 3, 5]).T
-(
-    slope2_vega,
-    MH2_vega,
-    Age2_vega,
-    m_U,
-    m_B,
-    m_V,
-    m_R,
-    m_I,
-    m_J,
-    m_H,
-    m_K,
-) = np.loadtxt(file_vega, usecols=[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]).T
-slope2_sdss, MH2_sdss, Age2_sdss, m_u, m_g, m_r, m_i = np.loadtxt(
-    file_sdss, usecols=[1, 2, 3, 4, 5, 6, 7]
-).T
-
-slope2 = {"vega": slope2_vega, "sdss": slope2_sdss}
-MH2 = {"vega": MH2_vega, "sdss": MH2_sdss}
-Age2 = {"vega": Age2_vega, "sdss": Age2_sdss}
-
-m_vega = {
-    "U": m_U,
-    "B": m_B,
-    "V": m_V,
-    "R": m_R,
-    "I": m_I,
-    "J": m_J,
-    "H": m_H,
-    "K": m_K,
-}
-m_sdss = {"u": m_u, "g": m_g, "r": m_r, "i": m_i}
-
-
-def mass_to_light(weights, band="r", quiet=False):
-    """
-    Computes the M/L in a chosen band, given the weights produced
-    in output by pPXF. A Salpeter IMF is assumed (slope=1.3).
-    The returned M/L includes living stars and stellar remnants,
-    but excludes the gas lost during stellar evolution.
-    Parameters
-    ----------
-    weights:
-        pPXF output with dimensions weights[miles.n_ages, miles.n_metal]
-    band:
-        possible choices are "U", "B", "V", "R", "I", "J", "H", "K" for
-        the Vega photometric system and "u", "g", "r", "i" for the SDSS
-        AB system.
-    quiet:
-        set to True to suppress the printed output.
-    Returns
-    -------
-    mass_to_light (float) in the given band
-    """
-    assert (
-        miles.age_grid.shape == miles.metal_grid.shape == weights.shape
-    ), "Input weight dimensions do not match"
-    if band in vega_bands:
-        k = vega_bands.index(band)
-        sun_mag = vega_sun_mag[k]
-        mag = m_vega[band]
-        _Age2 = Age2["vega"]
-        _slope2 = slope2["vega"]
-        _MH2 = MH2["vega"]
-    elif band in sdss_bands:
-        k = sdss_bands.index(band)
-        sun_mag = sdss_sun_mag[k]
-        mag = m_sdss[band]
-        _Age2 = Age2["sdss"]
-        _slope2 = slope2["sdss"]
-        _MH2 = MH2["sdss"]
-    else:
-        raise ValueError("Unsupported photometric band")
-    # The following loop is a brute force, but very safe and general,
-    # way of matching the photometric quantities to the SSP spectra.
-    # It makes no assumption on the sorting and dimensions of the files
-    mass_no_gas_grid = np.empty_like(weights)
-    lum_grid = np.empty_like(weights)
-    for j in range(miles.n_ages):
-        for k in range(miles.n_metal):
-            p1 = (
-                (np.abs(miles.age_grid[j, k] - Age1) < 0.001)
-                & (np.abs(miles.metal_grid[j, k] - MH1) < 0.01)
-                & (np.abs(1.30 - slope1) < 0.01)
-            )
-            mass_no_gas_grid[j, k] = m_no_gas[p1]
-            p2 = (
-                (np.abs(miles.age_grid[j, k] - _Age2) < 0.001)
-                & (np.abs(miles.metal_grid[j, k] - _MH2) < 0.01)
-                & (np.abs(1.30 - _slope2) < 0.01)
-            )
-            lum_grid[j, k] = 10 ** (-0.4 * (mag[p2] - sun_mag))
-    # This is eq.(2) in Cappellari+13
-    # http://adsabs.harvard.edu/abs/2013MNRAS.432.1862C
-    mlpop = np.sum(weights * mass_no_gas_grid, axis=1) / np.sum(
-        weights * lum_grid, axis=1
-    )
-    if not quiet:
-        print("Summed M/L in passband " + band + ": %#.4g" % np.nansum(mlpop))
-    return mlpop
-
-
-data = fits.open(
-    "manga-10001/manga-10001-6104-LOGCUBE-VOR10-MILESHC-MASTARSSP.fits.gz"
-)
 
 
 def find_reg(
@@ -163,25 +31,21 @@ def find_reg(
     moments,
     degree,
     mdegree,
+    fixed,
     clean,
     ftol,
     lam,
     lam_temp,
     linear_method,
+    reg_ord,
     bias,
     reg_dim,
     component,
     gas_component,
     gas_names,
-    gas_reddening,
     desired_chi2,
 ):
-    reg_guess = reg_guess[0]
-    if reg_guess < 0.0:
-        return np.inf
-    """
-    print("Current regularisation value is: {}.".format(reg_guess))
-    """
+    reg_guess = 10.0 ** reg_guess[0]
     pp = ppxf(
         templates=templates,
         galaxy=galaxy,
@@ -193,27 +57,29 @@ def find_reg(
         moments=moments,
         degree=degree,
         mdegree=mdegree,
+        fixed=fixed,
         clean=clean,
         ftol=ftol,
         lam=lam,
         lam_temp=lam_temp,
         linear_method=linear_method,
         regul=reg_guess,
+        reg_ord=reg_ord,
         bias=bias,
         reg_dim=reg_dim,
         component=component,
         gas_component=gas_component,
         gas_names=gas_names,
-        gas_reddening=gas_reddening,
         quiet=True,
     )
-    chi2_diff = pp.chi2 * pp.dof - desired_chi2
+    chi2_diff = abs(pp.chi2 - desired_chi2)
     """
     print("")
     print(
         "================================================================================"
     )
-    print("Current Chi^2: {}".format(pp.chi2 * pp.dof))
+    print("Current regularisation value is: {}.".format(reg_guess))
+    print("Current Chi^2: {}".format(pp.chi2))
     print("Desired Chi^2: {}".format(desired_chi2))
     print("Current distance from the desired Chi^2 is: {}.".format(chi2_diff))
     print(
@@ -221,8 +87,117 @@ def find_reg(
     )
     print("")
     """
-    return chi2_diff**2.0
+    return chi2_diff
 
+
+def get_uncertainty(
+    templates_corrected,
+    galaxy_best_fit,
+    noise_rescaled,
+    velscale_rebinned,
+    start,
+    goodpixels,
+    plot,
+    moments,
+    degree,
+    mdegree,
+    fixed,
+    clean,
+    ftol,
+    lam,
+    lam_temp,
+    linear_method,
+    regul,
+    reg_ord,
+    bias,
+    reg_dim,
+    component,
+    gas_component,
+    gas_names,
+    residual,
+):
+    galaxy_output = []
+    light_weight_output = []
+    mass_weight_output = []
+    sfr_light_output = []
+    sfr_weight_output = []
+    for _ in range(100):
+        galaxy_noise_added = np.random.normal(
+            loc=galaxy_best_fit, scale=residual
+        )
+        pp = ppxf(
+            templates_corrected,
+            galaxy_noise_added,
+            noise_rescaled,
+            velscale_rebinned,
+            start,
+            goodpixels=goodpixels,
+            plot=plot,
+            moments=moments,
+            degree=degree,
+            mdegree=mdegree,
+            fixed=fixed,
+            clean=clean,
+            ftol=ftol,
+            lam=lam,
+            lam_temp=lam_temp,
+            linear_method=linear_method,
+            regul=regul,
+            reg_ord=reg_ord,
+            bias=bias,
+            reg_dim=reg_dim,
+            component=component,
+            gas_component=gas_component,
+            gas_names=gas_names,
+        )
+        light_weights = pp.weights[
+            ~gas_component
+        ]  # Exclude gas templates weights
+        light_weights = light_weights.reshape(
+            reg_dim
+        )  # Reshape to a 2D matrix
+
+        # convert from light to mass, hence 1./Mass-to-light
+        mass_weights = light_weights / miles.flux
+        mass_weights[np.isnan(mass_weights)] = 0.0
+
+        sfr_light = np.median(light_weights, axis=1)
+        sfr_light[np.isnan(sfr_light)] = 0.0
+
+        sfr_mass = np.median(mass_weights, axis=1)
+        sfr_mass[np.isnan(sfr_mass)] = 0.0
+
+        galaxy_output.append(pp.bestfit)
+        light_weight_output.append(light_weights)
+        mass_weight_output.append(mass_weights)
+        sfr_light_output.append(sfr_light)
+        sfr_weight_output.append(sfr_mass)
+
+    return (
+        galaxy_output,
+        light_weight_output,
+        mass_weight_output,
+        sfr_light_output,
+        sfr_weight_output,
+    )
+
+
+data_firefly = fits.open("manga-firefly-v3_1_1-miles.fits.gz")
+firefly_mask = np.where(
+    data_firefly["GALAXY_INFO"].data["PLATEIFU"] == "9881-9102"
+)[0][0]
+
+ppxf_dir = os.path.dirname(os.path.realpath(ppxf_package.__file__))
+#miles_pathname = os.path.join(
+#    ppxf_dir, "fsps_generated_template", "Eun1.30Z*.fits"
+#)
+miles_pathname = os.path.join(
+    ppxf_dir, "miles_models", "Eun1.30Z*.fits"
+)
+
+data = fits.open(
+    "manga-9881\manga-9881-9102-LOGCUBE-HYB10-MILESHC-MASTARSSP.fits.gz"
+)
 
 # speed of light
 c = constants.c.to("km/s").value
@@ -245,22 +220,25 @@ h4 = 0.1
 FWHM_gal = (
     2.76  # SDSS has an approximate instrumental resolution FWHM of 2.76A.
 )
-wave_new = np.arange(3650.0, 7500.0, FWHM_gal)
-velscale = c * np.median(np.diff(wave_new)) / wave_new[-1]
 
-wave = data["WAVE"].data
+wave = data["WAVE"].data / (1 + z)
+wave_new = np.arange(wave[0], 9000.0, FWHM_gal)
 velscale = c * np.log(wave_new[1] / wave_new[0])
 
 # Estimate the wavelength fitted range in the rest frame.
-lam_range_gal = np.array([np.min(wave), np.max(wave)]) / (1 + z)
+lam_range_gal = np.array([np.min(wave), 9000.0])
 
 ### for setting up the MILES
 _galaxy = data["FLUX"].data[:, 0, 0]
-_galaxy = spectres(wave_new, wave, _galaxy)
+_galaxy = spectres(wave_new, wave, _galaxy, fill=0.0)
 
 # natural log
-(_, _, velscale_rebinned,) = util.log_rebin(
-    [np.nanmin(wave_new), np.nanmax(wave_new)],
+(
+    _,
+    _,
+    velscale_rebinned,
+) = util.log_rebin(
+    wave_new,
     _galaxy,
     velscale=velscale,
 )
@@ -270,12 +248,13 @@ miles = lib.miles(
     velscale_rebinned,
     FWHM_gal,
     age_range=None,
+    norm_range=[5070, 5950],
     metal_range=[-0.05, 0.05],
-    wave_range=(3500, 10500),
+    wave_range=(3000, 9500),
 )
 reg_dim = miles.templates.shape[1:]
-stars_templates = miles.templates.reshape(miles.templates.shape[0], -1)
-n_temps = stars_templates.shape[1]
+star_templates = miles.templates.reshape(miles.templates.shape[0], -1)
+n_temps = star_templates.shape[1]
 
 tie_balmer = True
 limit_doublets = True
@@ -289,13 +268,14 @@ gas_templates, gas_names, line_wave = util.emission_lines(
     FWHM_gal,
     tie_balmer=tie_balmer,
     limit_doublets=limit_doublets,
+    pixel=True,
 )
 
 # Combines the stellar and gaseous templates into a single array.
 # During the PPXF fit they will be assigned a different kinematic
 # COMPONENT value
 #
-templates = np.column_stack([stars_templates, gas_templates])
+templates = np.column_stack([star_templates, gas_templates])
 
 # If the Balmer lines are tied one should allow for gas reddeining.
 # The gas_reddening can be different from the stellar one, if both are fitted.
@@ -316,7 +296,6 @@ vorid = data["BINID"].data[0].astype("int")
 vorid_list = np.sort(vorid[vorid >= 0])
 
 for _id in vorid_list:
-
     # Get the vornoi pixel coordinate
     # Since the data are all repeating when they share the same vorid, we
     # are only getting the position from the first
@@ -331,36 +310,40 @@ for _id in vorid_list:
     galaxy = data["FLUX"].data[:, x, y]
     galaxy_err = 1.0 / data["IVAR"].data[:, x, y]
 
-    galaxy, galaxy_err = spectres(wave_new, wave, galaxy, galaxy_err)
+    galaxy, galaxy_err = spectres(wave_new, wave, galaxy, np.sqrt(galaxy_err))
+    non_nan_mask = (~np.isnan(galaxy) & ~np.isnan(galaxy_err))
+    wave_new = wave_new[non_nan_mask]
+    galaxy = galaxy[non_nan_mask]
+    galaxy_err = galaxy_err[non_nan_mask]
 
     # natural log
-    (galaxy_log_rebinned, wave_rebinned, velscale_rebinned,) = util.log_rebin(
-        [np.nanmin(wave_new), np.nanmax(wave_new)],
-        galaxy,
-        velscale=velscale,
-    )
+    (
+        galaxy_log_rebinned,
+        wave_rebinned,
+        velscale_rebinned,
+    ) = util.log_rebin(wave_new, galaxy, velscale=velscale, flux=False)
+    (
+        noise,
+        wave_rebinned,
+        velscale_rebinned,
+    ) = util.log_rebin(wave_new, galaxy_err, velscale=velscale, flux=False)
 
-    (noise, wave_rebinned, velscale_rebinned,) = util.log_rebin(
-        [np.nanmin(wave_new), np.nanmax(wave_new)],
-        galaxy_err,
-        velscale=velscale,
-    )
-
-    noise = np.sqrt(noise)
+    goodpixels = np.arange(len(galaxy_log_rebinned))[
+        np.isfinite(galaxy_log_rebinned) & ~np.isnan(galaxy_log_rebinned)
+    ]
 
     weights = []
 
-    goodpixels = np.arange(len(galaxy_log_rebinned))
-
-    vel = c * np.log(1 + z)
+    vel = 0.0
     # (km/s), starting guess for [V, sigma]
     start = [[vel, 1.0, h3, h4], [vel, 1.0], [vel, 1.0]]
 
     # fixed = None
-    fixed = [0, 0, 0, 0]
+    fixed = [[0, 0, 0, 0], [0, 0], [0, 0]]
 
-    # Get the UNREGULARISED fit here
-    _pp = ppxf(
+    # step (i) of Kacharov et al. 2018
+    # Get the kinematics
+    _pp1 = ppxf(
         templates,
         galaxy_log_rebinned,
         noise,
@@ -369,114 +352,260 @@ for _id in vorid_list:
         goodpixels=goodpixels,
         plot=False,
         moments=moments,
-        degree=8,
-        mdegree=4,
-        clean=True,
-        ftol=1e-4,
+        degree=10,
+        mdegree=10,
+        fixed=fixed,
+        clean=False,
+        ftol=1e-8,
         lam=np.exp(wave_rebinned),
-        lam_temp=np.exp(miles.ln_lam_temp),
+        lam_temp=miles.lam_temp,
         linear_method="lsq_box",
-        regul=0.0,
-        bias=0.0,
-        reg_dim=reg_dim,
+        bias=None,
         component=component,
         gas_component=gas_component,
         gas_names=gas_names,
-        gas_reddening=gas_reddening,
     )
 
-    scaling_factor = np.sqrt(_pp.chi2)
+    start = _pp1.sol
+    fixed = [[1, 1, 1, 1], [1, 1], [1, 1]]
 
-    unregularised_chi2 = _pp.goodpixels.size
-    delta_chi2 = np.sqrt(2 * _pp.goodpixels.size)
-    desired_chi2 = unregularised_chi2 + delta_chi2
-
-    print("")
-    print(
-        "================================================================================"
+    # Step (ii) of Kacharov et al. 2018
+    # Fit for the reddening value
+    dust_gas = {"start": [0.1], "bounds": [[0, 8]], "component": gas_component}
+    dust_stars = {
+        "start": [0.1, -0.1],
+        "bounds": [[0, 4], [-1, 10.0]],
+        "component": ~gas_component,
+    }
+    dust = [dust_stars, dust_gas]
+    _pp2 = ppxf(
+        templates,
+        galaxy_log_rebinned,
+        noise,
+        velscale_rebinned,
+        start,
+        goodpixels=goodpixels,
+        plot=False,
+        moments=moments,
+        degree=-1,
+        dust=dust,
+        mdegree=0,
+        fixed=fixed,
+        clean=False,
+        ftol=1e-8,
+        lam=np.exp(wave_rebinned),
+        lam_temp=miles.lam_temp,
+        linear_method="lsq_box",
+        regul=0,
+        bias=None,
+        component=component,
+        gas_component=gas_component,
+        gas_names=gas_names,
     )
-    print("Unregularised Chi^2: {}".format(unregularised_chi2))
-    print("Desired delta(Chi^2) = {}".format(delta_chi2))
-    print("Desired Chi^2: {}".format(desired_chi2))
-    print(
-        "================================================================================"
-    )
-    print("")
+    print(_pp2.dust)
 
+    Av, delta = _pp2.dust[0]["sol"]
+    star_templates_reddened = np.vstack(
+        [
+            extinction.apply(extinction.calzetti00(miles.lam_temp, Av, 3.1), i)
+            for i in templates.T[~gas_component]
+        ]
+    ).T
+    templates_reddened = np.column_stack(
+        [star_templates_reddened, gas_templates]
+    )
+
+    dust_gas = {"start": [0.0], "bounds": [[0, 8]], "fixed": [1], "component": gas_component}
+    dust_stars = {"start": [0.0, 0.0], "bounds": [[0, 4], [-1, 0.4]], "fixed": [1, 1], "component": ~gas_component}
+    dust = [dust_stars, dust_gas]
+    # Step (iii) of Kacharov et al. 2018
+    # Perform an unregularised fit, with a 10th order multiplicative polynomial
+    _pp3 = ppxf(
+        templates_reddened,
+        galaxy_log_rebinned,
+        noise,
+        velscale_rebinned,
+        start,
+        goodpixels=goodpixels,
+        plot=False,
+        moments=moments,
+        degree=-1,
+        mdegree=10,
+        fixed=fixed,
+        clean=False,
+        ftol=1e-8,
+        lam=np.exp(wave_rebinned),
+        lam_temp=miles.lam_temp,
+        linear_method="lsq_box",
+        regul=0,
+        bias=None,
+        component=component,
+        gas_component=gas_component,
+        gas_names=gas_names,
+    )
+
+    # Rescale the noise so that reduced chi2 becomes 1
+    noise_rescaled = noise * np.sqrt(_pp3.chi2)
+    delta_chi2 = np.sqrt(2 * goodpixels.size)
+
+    desired_chi2 = (goodpixels.size + delta_chi2) / goodpixels.size
+
+    mpoly = _pp3.mpoly
+
+    # get the mpoly at the template wavelength (linear)
+    mpoly_linear_space = 10.0 ** itp.interp1d(
+        np.exp(wave_rebinned), np.log10(mpoly), fill_value="extrapolate"
+    )(miles.lam_temp)
+
+    # Correct the templates with the multiplicative polynomial
+    star_templates_corrected = (
+        templates_reddened.T[~gas_component] * mpoly_linear_space
+    )
+    templates_corrected = np.column_stack(
+        [star_templates_corrected.T, gas_templates]
+    )
+
+    _pp4 = ppxf(
+        templates_corrected,
+        galaxy_log_rebinned,
+        noise_rescaled,
+        velscale_rebinned,
+        start,
+        goodpixels=goodpixels,
+        plot=False,
+        moments=moments,
+        degree=-1,
+        mdegree=0,
+        fixed=fixed,
+        clean=False,
+        ftol=1e-8,
+        lam=np.exp(wave_rebinned),
+        lam_temp=miles.lam_temp,
+        linear_method="lsq_box",
+        regul=0,
+        bias=None,
+        component=component,
+        gas_component=gas_component,
+        gas_names=gas_names,
+    )
+
+    noise_rescaled_2 = noise_rescaled * np.sqrt(_pp4.chi2)
+
+    # Step (iv) of Kacharov et al. 2018
     results = minimize(
         find_reg,
-        5.0,
+        np.log10(100.0),
         args=(
-            templates,
+            templates_corrected,
             galaxy_log_rebinned,
-            noise * scaling_factor,
+            noise_rescaled_2,
             velscale_rebinned,
             start,
             goodpixels,
             False,
             moments,
-            8,
-            4,
-            True,
-            1e-4,
+            -1,
+            0,
+            fixed,
+            False,
+            1e-8,
             np.exp(wave_rebinned),
-            np.exp(miles.ln_lam_temp),
+            miles.lam_temp,
             "lsq_box",
-            0.0,
+            1,
+            None,
             reg_dim,
             component,
             gas_component,
             gas_names,
-            gas_reddening,
             desired_chi2,
         ),
-        tol=5e-1,
+        tol=1e-8,
         method="Powell",
-        options={"ftol": 5e-1, "xtol": 5e-1},
+        options={"ftol": 1e-8, "xtol": 1e-8},
     )
-    best_reg = results.x
+    best_reg = 10.0 ** results.x[0]
 
-    # Get the UNREGULARISED fit here
-    _pp = ppxf(
-        templates,
+    # Get the residuals for resampling for noise estimation
+    pp = ppxf(
+        templates_corrected,
         galaxy_log_rebinned,
-        noise,
+        noise_rescaled_2,
         velscale_rebinned,
         start,
         goodpixels=goodpixels,
         plot=False,
         moments=moments,
-        degree=8,
-        mdegree=4,
+        degree=-1,
+        mdegree=0,
+        fixed=fixed,
         clean=False,
-        ftol=1e-4,
+        ftol=1e-8,
         lam=np.exp(wave_rebinned),
-        lam_temp=np.exp(miles.ln_lam_temp),
+        lam_temp=miles.lam_temp,
         linear_method="lsq_box",
         regul=best_reg,
-        bias=0.0,
+        reg_ord=1,
+        bias=None,
         reg_dim=reg_dim,
         component=component,
-        quiet=False,
         gas_component=gas_component,
         gas_names=gas_names,
-        gas_reddening=gas_reddening,
+    )
+    print(f"Best fit reduced-chi2: {pp.chi2}")
+
+    # Resampling 100 times using the residuals
+    (
+        galaxy_bootstrap,
+        light_weight_bootstrap,
+        mass_weight_bootstrap,
+        sfr_light_bootstrap,
+        sfr_mass_bootstrap,
+    ) = get_uncertainty(
+        templates_corrected,
+        galaxy_log_rebinned,
+        noise_rescaled_2,
+        velscale_rebinned,
+        start,
+        goodpixels=goodpixels,
+        plot=False,
+        moments=moments,
+        degree=-1,
+        mdegree=0,
+        fixed=fixed,
+        clean=False,
+        ftol=1e-8,
+        lam=np.exp(wave_rebinned),
+        lam_temp=miles.lam_temp,
+        linear_method="lsq_box",
+        regul=best_reg,
+        reg_ord=1,
+        bias=None,
+        reg_dim=reg_dim,
+        component=component,
+        gas_component=gas_component,
+        gas_names=gas_names,
+        residual=np.abs(galaxy_log_rebinned - _pp1.bestfit),
     )
 
-    weights = _pp.weights[~gas_component]
-    weights = weights.reshape(reg_dim) / weights.sum()  # Normalized
-    sfr = np.sum(weights, axis=1)
-    age = miles.age_grid[:, 0]
+    light_weights = pp.weights[~gas_component]  # Exclude gas templates weights
+    light_weights = light_weights.reshape(reg_dim)  # Reshape to a 2D matrix
+    light_weights /= np.nanmedian(light_weights)
 
-    ml_r = mass_to_light(weights, band="r")
-    ml_V = mass_to_light(weights, band="V")
+    # convert from light to mass, hence 1./Mass-to-light
+    mass_weights = light_weights / miles.flux
+    mass_weights[np.isnan(mass_weights)] = 0.0
 
-    sfr_r = sfr / ml_r
-    sfr_V = sfr / ml_V
+    sfr_light = np.sum(light_weights, axis=1)
+    sfr_light[np.isnan(sfr_light)] = 0.0
 
-    sfr_r[np.isnan(sfr_r)] = 0.0
-    sfr_V[np.isnan(sfr_V)] = 0.0
+    sfr_mass = np.sum(mass_weights, axis=1)
+    sfr_mass[np.isnan(sfr_mass)] = 0.0
 
+    age_grid = miles.age_grid[:, 0]
+    metal_grid = miles.metal_grid.T[:, 0]
+
+    # Create plot here
     gs = gridspec.GridSpec(4, 1, height_ratios=[4, 1, 4, 4])
 
     fig = plt.figure(1, figsize=(10, 12))
@@ -486,15 +615,24 @@ for _id in vorid_list:
     ax4 = plt.subplot(gs[3])
 
     ax1.plot(np.exp(wave_rebinned), galaxy_log_rebinned, label="Input")
+    ax1.fill_between(
+        np.exp(wave_rebinned),
+        galaxy_log_rebinned - noise,
+        galaxy_log_rebinned + noise,
+        alpha=0.5,
+        color="grey",
+        zorder=2,
+        label="Error Range",
+    )
     ax1.plot(
         np.exp(wave_rebinned),
-        _pp.bestfit,
+        pp.bestfit,
         color="black",
         label="Fitted",
     )
     ax1.scatter(
         np.exp(wave_rebinned),
-        galaxy_log_rebinned - _pp.bestfit,
+        galaxy_log_rebinned - pp.bestfit,
         color="green",
         s=2,
         label="Residual",
@@ -503,57 +641,69 @@ for _id in vorid_list:
     ax1.set_xlim(min(np.exp(wave_rebinned)), max(np.exp(wave_rebinned)))
     ax1.set_xlabel("Wavelength / A")
     ax1.set_ylabel("Relative Flux")
-    ax1.set_title("Plate {} Fibre {} VorID {}".format(10001, 6104, _id))
     ax1.legend()
 
-    ax3.imshow(
-        weights.T,
-        origin="lower",
-        extent=[min(age), max(age), -0.2, 0.11],
-        aspect="auto",
+    im = NonUniformImage(
+        ax3,
+        interpolation="nearest",
+        extent=(
+            (1.5 * age_grid[0] - 0.5 * age_grid[1]),
+            (1.5 * age_grid[-1] - 0.5 * age_grid[-2]),
+            metal_grid[0] - 0.5,
+            metal_grid[0] + 0.5,
+        ),
     )
+    x_ax3 = age_grid
+    y_ax3 = metal_grid
+    im.set_data(x_ax3, y_ax3, light_weights.T)
+    ax3.images.append(im)
     ax3.set_xticklabels([""])
     ax3.set_ylabel("Metallicity")
-    ax3.set_yticks([0.0])
-    ax3.set_yticklabels(["0.0"])
-    ax3b = ax4.twinx()
-    ax3b.set_ylabel("Recovered")
-    ax3b.set_yticklabels([""])
+    ax3.set_xlim(
+        (1.5 * age_grid[0] - 0.5 * age_grid[1]),
+        (1.5 * age_grid[-1] - 0.5 * age_grid[-2]),
+    )
+    ax3.set_yticks(metal_grid)
+    ax3.set_yticklabels(metal_grid)
+    ax3.set_ylim(
+        metal_grid[0] - 0.5,
+        metal_grid[0] + 0.5,
+    )
 
-    ax4.plot(age, sfr / np.nanmax(sfr), label="Recovered (light-weighted)")
+    # Plot the firefly solution here
+    #
+    #
+    #
+    #
+    #
+
     ax4.plot(
-        age,
-        sfr_r / np.nanmax(sfr_r),
-        label="Recovered (mass-weighted, r)",
+        age_grid,
+        sfr_light / np.nanmax(sfr_light),
+        label="Recovered (light-weighted)",
     )
-    ax4.plot(
-        age,
-        sfr_V / np.nanmax(sfr_V),
-        label="Recovered (mass-weighted, V)",
+    for _sfr in sfr_mass_bootstrap:
+        ax4.plot(
+            age_grid,
+            _sfr / np.nanmax(_sfr),
+            color="grey",
+            alpha=0.1,
+            zorder=15,
+        )
+    sfr_median = np.nanmedian(sfr_mass_bootstrap, axis=0)
+    sfr_mass_err = (
+        np.nanmedian(np.abs(sfr_mass_bootstrap - sfr_median), axis=0) * 1.4826
     )
-
-    firefly_id = firefly_bin_id_list[firefly_mask]
-    firefly_sfh = firefly_sfh_list[firefly_mask]
-
-    bin_id = firefly_id[x, y]
-    sfh_data_grid_pos = np.where(
-        firefly_spatial_info_list[firefly_mask][:, 0] == bin_id
+    ax4.errorbar(
+        age_grid,
+        sfr_mass / np.nanmax(sfr_mass),
+        yerr=sfr_mass_err / np.nanmax(sfr_mass),
+        label="Recovered (mass-weighted)",
+        capsize=5,
+        elinewidth=2,
     )
-    firefly_sfh_x_y = firefly_sfh[sfh_data_grid_pos][0]
-    firefly_sfh_x_y = firefly_sfh_x_y[firefly_sfh_x_y[:, 2] > 0]
-
-    ax4.scatter(
-        10.0 ** firefly_sfh_x_y[:, 0],
-        firefly_sfh_x_y[:, 2] / max(firefly_sfh_x_y[:, 2]),
-        label="Firefly",
-        marker="+",
-        color="black",
-        s=50,
-    )
-
-    ax4.set_xlim(np.nanmin(age), np.nanmax(age))
+    ax4.set_xlim(np.nanmin(age_grid), np.nanmax(age_grid))
     ax4.grid()
-    ax4.set_xscale("log")
     ax4.set_ylabel("Relative Star Formation Rate")
     ax4.set_xlabel("Age / Gyr")
     ax4.legend()
@@ -561,8 +711,11 @@ for _id in vorid_list:
     plt.subplots_adjust(
         top=0.975, bottom=0.05, left=0.08, right=0.95, hspace=0
     )
+    plt.ion()
+    plt.show()
+
     plt.savefig(
-        "manga-10001/manga-10001-6104-{}-optimal-regul-{}.png".format(
+        "manga-9881/manga-9881-9102-{}-optimal-regul-{}.png".format(
             _id, float(best_reg)
         )
     )
