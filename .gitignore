@@ -135,3 +135,4 @@ firefly/*.fits
 firefly/*.fit
 firefly/*.bz2
 firefly/*.gz
+simulation/sfh_voronoi.npy
