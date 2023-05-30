@@ -79,8 +79,8 @@ def likelihood_voronoi(
     # mass grid has the integrated mass of star formation in that time bin
     lamb = np.nansum(_dtd_guess * mass_grid)
     # Eq. 6 simplified
-    lamb_with_sn = np.nansum(_dtd_guess * mass_grid_with_sn, axis=1)
-    x_ln_lamb = np.nansum(n_sn_flatten * np.log(lamb_with_sn))
+    lamb_with_sn = np.dot(_dtd_guess, mass_grid_with_sn)
+    x_ln_lamb = np.nansum(np.dot(n_sn_flatten, np.log(lamb_with_sn)))
     neg_ln_like = lamb - x_ln_lamb
     return neg_ln_like
 
@@ -102,10 +102,10 @@ def likelihood_zero_inflated_voronoi(
     # In our adaptation, each lamb is for each fibre
     # mass grid has the integrated mass of star formation in that time bin
     # sum over axis=1 means the array size is the number of SN-host spexel
-    lamb_with_sn = np.sum(_dtd_guess * mass_grid_with_sn, axis=1)
-    lamb_without_sn = np.sum(_dtd_guess * mass_grid_without_sn, axis=1)
+    lamb_with_sn = np.dot(_dtd_guess, mass_grid_with_sn)
+    lamb_without_sn = np.dot(_dtd_guess, mass_grid_without_sn)
     # zero inflation y > 0 term
-    ln_like_with_sn = np.sum(n_sn_flatten * np.log(lamb_with_sn) - lamb_with_sn)
+    ln_like_with_sn = np.sum(np.dot(n_sn_flatten, np.log(lamb_with_sn)) - lamb_with_sn)
     # zero inflation y == 0 term
     ln_like_without_sn = np.sum(np.log(theta + np.exp(-lamb_without_sn)))
     # zero inflation mutual term
@@ -113,6 +113,7 @@ def likelihood_zero_inflated_voronoi(
     neg_ln_like = -(
         ln_like_without_sn + ln_like_with_sn - ln_like_mutual_term
     )
+    print(dtd_guess, theta)
     return neg_ln_like
 
 
@@ -303,12 +304,12 @@ for nudge_factor in nudge_factor_list:
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            sfh_voronoi_with_sn,
+            sfh_voronoi_with_sn.T,
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer)
     answer_tophat_1 = minimize(
@@ -316,12 +317,12 @@ for nudge_factor in nudge_factor_list:
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            sfh_voronoi_with_sn_tophat_1,
+            sfh_voronoi_with_sn_tophat_1.T,
             sn_list_tophat_1[sn_mask_tophat_1],
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_tophat_1)
     answer_tophat_2 = minimize(
@@ -329,12 +330,12 @@ for nudge_factor in nudge_factor_list:
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            sfh_voronoi_with_sn_tophat_2,
+            sfh_voronoi_with_sn_tophat_2.T,
             sn_list_tophat_2[sn_mask_tophat_2],
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_tophat_2)
     np.save(
@@ -366,45 +367,45 @@ for nudge_factor in nudge_factor_list:
         likelihood_zero_inflated_voronoi,
         dtd_bin_and_theta,
         args=(
-            sfh_voronoi_with_sn,
-            sfh_voronoi_without_sn,
-            sn_list[sn_mask][np.newaxis].T,
+            sfh_voronoi_with_sn.T,
+            sfh_voronoi_without_sn.T,
+            sn_list[sn_mask],
             n_spexel,
             len(dtd_bin)
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_zero_inflated)
     answer_zero_inflated_tophat_1 = minimize(
         likelihood_zero_inflated_voronoi,
         dtd_bin_and_theta,
         args=(
-            sfh_voronoi_with_sn_tophat_1,
-            sfh_voronoi_without_sn_tophat_1,
-            sn_list_tophat_1[sn_mask_tophat_1][np.newaxis].T,
+            sfh_voronoi_with_sn_tophat_1.T,
+            sfh_voronoi_without_sn_tophat_1.T,
+            sn_list_tophat_1[sn_mask_tophat_1],
             n_spexel,
             len(dtd_bin)
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_zero_inflated_tophat_1)
     answer_zero_inflated_tophat_2 = minimize(
         likelihood_zero_inflated_voronoi,
         dtd_bin_and_theta,
         args=(
-            sfh_voronoi_with_sn_tophat_2,
-            sfh_voronoi_without_sn_tophat_2,
-            sn_list_tophat_2[sn_mask_tophat_2][np.newaxis].T,
+            sfh_voronoi_with_sn_tophat_2.T,
+            sfh_voronoi_without_sn_tophat_2.T,
+            sn_list_tophat_2[sn_mask_tophat_2],
             n_spexel,
             len(dtd_bin)
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_zero_inflated_tophat_2)
     np.save(
@@ -438,8 +439,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list[sn_mask]),
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn)
     np.save(
@@ -458,8 +459,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_1[sn_mask_tophat_1]),
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn_tophat_1)
     answer_no_sn_tophat_2 = minimize(
@@ -471,8 +472,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_2[sn_mask_tophat_2]),
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn_tophat_2)
     np.save(
@@ -506,8 +507,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list[sn_mask])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn_zero_inflated)
     answer_no_sn_zero_inflated_tophat_1 = minimize(
@@ -519,8 +520,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_1[sn_mask_tophat_1])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn_zero_inflated_tophat_1)
     answer_no_sn_zero_inflated_tophat_2 = minimize(
@@ -532,8 +533,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_2[sn_mask_tophat_2])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sn_zero_inflated_tophat_2)
     np.save(
@@ -572,8 +573,8 @@ for nudge_factor in nudge_factor_list:
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_no_sfh_lt_1e8)
     np.save(
@@ -600,8 +601,8 @@ for nudge_factor in nudge_factor_list:
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-30,
-        options={"maxiter": 100000, "xtol": 1e-30, "ftol": 1e-30},
+        tol=1e-20,
+        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
     )
     print(answer_1percent_sfh_lt_1e8)
     np.save(
