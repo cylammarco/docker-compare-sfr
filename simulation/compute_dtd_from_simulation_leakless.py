@@ -12,6 +12,7 @@ from scipy import interpolate as itp
 from scipy import special
 
 
+
 def get_dtd(gap, gradient, normalisation=1.0):
     """
     Return an interpolated function of a delay time distribution
@@ -34,10 +35,9 @@ def get_dtd(gap, gradient, normalisation=1.0):
     dtd = np.ones_like(t)
     mask = t > gap
     dtd[mask] = (t[mask] * 1e-9) ** gradient
-    dtd[~mask] = 1e-100
+    dtd[~mask] = min(dtd[mask]) * 0.1
     dtd /= max(dtd)
     dtd *= normalisation
-    dtd[~mask] = 1e-100
     dtd_itp = itp.interp1d(t, dtd, kind="linear", fill_value="extrapolate")
     return dtd_itp
 
@@ -59,11 +59,12 @@ def get_tophat_dtd(start, end, normalisation=1.0):
         The default is 1.0.
     """
     t = 10.0 ** np.linspace(1.0, 11.0, 10001)
-    dtd = np.ones_like(t) * 1e-100
+    dtd = np.ones_like(t) * normalisation * 0.01
     mask = (t > start) & (t < end)
     dtd[mask] = normalisation
     dtd_itp = itp.interp1d(t, dtd, kind="linear", fill_value="extrapolate")
     return dtd_itp
+
 
 
 def likelihood_voronoi(
@@ -77,11 +78,25 @@ def likelihood_voronoi(
     _dtd_guess = 10.0**dtd_guess * t_obs * epsilon
     # In our adaptation, each lamb is for each fibre
     # mass grid has the integrated mass of star formation in that time bin
-    lamb = np.nansum(_dtd_guess * mass_grid)
+    lamb = np.sum(_dtd_guess @ mass_grid)
     # Eq. 6 simplified
-    lamb_with_sn = np.dot(_dtd_guess, mass_grid_with_sn)
-    x_ln_lamb = np.nansum(np.dot(n_sn_flatten, np.log(lamb_with_sn)))
+    lamb_with_sn = _dtd_guess @ mass_grid_with_sn
+    x_ln_lamb = n_sn_flatten @ np.log(lamb_with_sn)
     neg_ln_like = lamb - x_ln_lamb
+    return neg_ln_like
+
+
+def likelihood_voronoi_no_sn(
+    dtd_guess,
+    mass_grid,
+):
+    # force the solution to go negative when it multiplied with ZERO
+    # Eq. 2, the lamb is for each galaxy
+    _dtd_guess = 10.0**dtd_guess * t_obs * epsilon
+    # In our adaptation, each lamb is for each fibre
+    # mass grid has the integrated mass of star formation in that time bin
+    lamb = np.sum(_dtd_guess @ mass_grid)
+    neg_ln_like = lamb
     return neg_ln_like
 
 
@@ -91,7 +106,7 @@ def likelihood_zero_inflated_voronoi(
     mass_grid_without_sn,
     n_sn_flatten,
     sample_size,
-    n_time_bin
+    n_time_bin,
 ):
     dtd_guess = dtd_guess_and_theta[:n_time_bin]
     # theta is for each spexel, NOT each time bin
@@ -102,25 +117,54 @@ def likelihood_zero_inflated_voronoi(
     # In our adaptation, each lamb is for each fibre
     # mass grid has the integrated mass of star formation in that time bin
     # sum over axis=1 means the array size is the number of SN-host spexel
-    lamb_with_sn = np.dot(_dtd_guess, mass_grid_with_sn)
-    lamb_without_sn = np.dot(_dtd_guess, mass_grid_without_sn)
+    lamb_with_sn = _dtd_guess @ mass_grid_with_sn
+    lamb_without_sn = _dtd_guess @ mass_grid_without_sn
     # zero inflation y > 0 term
-    ln_like_with_sn = np.sum(np.dot(n_sn_flatten, np.log(lamb_with_sn)) - lamb_with_sn)
+    ln_like_with_sn = np.sum(
+        n_sn_flatten * np.log(lamb_with_sn) - lamb_with_sn
+    )
     # zero inflation y == 0 term
     ln_like_without_sn = np.sum(np.log(theta + np.exp(-lamb_without_sn)))
     # zero inflation mutual term
     ln_like_mutual_term = np.sum(np.log(1 + theta)) * sample_size
-    neg_ln_like = -(
-        ln_like_without_sn + ln_like_with_sn - ln_like_mutual_term
-    )
+    neg_ln_like = -(ln_like_without_sn + ln_like_with_sn - ln_like_mutual_term)
     print(dtd_guess, theta)
+    return neg_ln_like
+
+
+def likelihood_zero_inflated_voronoi_2(
+    dtd_guess_and_theta,
+    mass_grid,
+    mass_grid_with_sn,
+    n_sn_flatten,
+    size_without_sn,
+    n_time_bin,
+):
+    dtd_guess = dtd_guess_and_theta[:n_time_bin]
+    # theta is for each spexel, NOT each time bin
+    theta = np.exp(dtd_guess_and_theta[n_time_bin])
+    # force the solution to go negative when it multiplied with ZERO
+    # Eq. 2, the lamb is for each galaxy
+    _dtd_guess = 10.0**dtd_guess * t_obs * epsilon
+    # In our adaptation, each lamb is for each fibre
+    # mass grid has the integrated mass of star formation in that time bin
+    # sum over axis=1 means the array size is the number of SN-host spexel
+    lamb = np.nansum(_dtd_guess * mass_grid)
+    # Eq. 6 simplified
+    lamb_with_sn = _dtd_guess @ mass_grid_with_sn
+    x_ln_lamb = np.nansum(n_sn_flatten @ np.log(lamb_with_sn))
+    # the zero-inflated components
+    ln_theta_with_sn = len(n_sn_flatten) * np.log(theta)
+    ln_theta_without_sn = size_without_sn * np.log(1 - theta)
+    neg_ln_like = lamb - x_ln_lamb - ln_theta_with_sn - ln_theta_without_sn
+    #print(dtd_guess, theta)
     return neg_ln_like
 
 
 # 140e-14 SNe / Msun / yr at 0.21 Gyr
 # delay time in 50 Myr
-gap = 100e6
-beta = -2.0
+gap = 50e6
+beta = -1.0
 
 
 # Get the SFH from the firefly data
@@ -249,7 +293,7 @@ else:
 sfh_voronoi[sfh_voronoi <= 0.0] = 0.0
 
 
-nudge_factor_list = [1.0]
+nudge_factor_list = [1.0, 10.0, 100.0]
 
 for nudge_factor in nudge_factor_list:
     t1 = gap / 1e9
@@ -308,8 +352,8 @@ for nudge_factor in nudge_factor_list:
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer)
     answer_tophat_1 = minimize(
@@ -321,8 +365,8 @@ for nudge_factor in nudge_factor_list:
             sn_list_tophat_1[sn_mask_tophat_1],
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_tophat_1)
     answer_tophat_2 = minimize(
@@ -334,8 +378,8 @@ for nudge_factor in nudge_factor_list:
             sn_list_tophat_2[sn_mask_tophat_2],
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_tophat_2)
     np.save(
@@ -359,9 +403,10 @@ for nudge_factor in nudge_factor_list:
         ),
         answer_tophat_2,
     )
-
+    """
     dtd_bin_and_theta = np.concatenate((dtd_bin, [1e-5]))
-    n_spexel = np.shape(sfh_voronoi)[0]
+    n_spexel = (np.shape(sfh_voronoi)[0],)
+    n_time_bin = len(dtd_bin_and_theta) - 1
 
     answer_zero_inflated = minimize(
         likelihood_zero_inflated_voronoi,
@@ -370,12 +415,12 @@ for nudge_factor in nudge_factor_list:
             sfh_voronoi_with_sn.T,
             sfh_voronoi_without_sn.T,
             sn_list[sn_mask],
-            n_spexel,
-            len(dtd_bin)
+            len(sfh_voronoi_without_sn),
+            n_time_bin,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_zero_inflated)
     answer_zero_inflated_tophat_1 = minimize(
@@ -385,12 +430,12 @@ for nudge_factor in nudge_factor_list:
             sfh_voronoi_with_sn_tophat_1.T,
             sfh_voronoi_without_sn_tophat_1.T,
             sn_list_tophat_1[sn_mask_tophat_1],
-            n_spexel,
-            len(dtd_bin)
+            len(sfh_voronoi_without_sn_tophat_1),
+            n_time_bin,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_zero_inflated_tophat_1)
     answer_zero_inflated_tophat_2 = minimize(
@@ -400,12 +445,12 @@ for nudge_factor in nudge_factor_list:
             sfh_voronoi_with_sn_tophat_2.T,
             sfh_voronoi_without_sn_tophat_2.T,
             sn_list_tophat_2[sn_mask_tophat_2],
-            n_spexel,
-            len(dtd_bin)
+            len(sfh_voronoi_without_sn_tophat_2),
+            n_time_bin,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_zero_inflated_tophat_2)
     np.save(
@@ -429,18 +474,17 @@ for nudge_factor in nudge_factor_list:
         ),
         answer_zero_inflated_tophat_2,
     )
+    """
 
     answer_no_sn = minimize(
-        likelihood_voronoi,
+        likelihood_voronoi_no_sn,
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            np.zeros_like(sfh_voronoi_with_sn),
-            np.zeros_like(sn_list[sn_mask]),
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn)
     np.save(
@@ -451,29 +495,25 @@ for nudge_factor in nudge_factor_list:
         answer_no_sn,
     )
     answer_no_sn_tophat_1 = minimize(
-        likelihood_voronoi,
+        likelihood_voronoi_no_sn,
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            np.zeros_like(sfh_voronoi_with_sn_tophat_1),
-            np.zeros_like(sn_list_tophat_1[sn_mask_tophat_1]),
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn_tophat_1)
     answer_no_sn_tophat_2 = minimize(
-        likelihood_voronoi,
+        likelihood_voronoi_no_sn,
         dtd_bin,
         args=(
             np.sum(sfh_voronoi, axis=0),
-            np.zeros_like(sfh_voronoi_with_sn_tophat_2),
-            np.zeros_like(sn_list_tophat_2[sn_mask_tophat_2]),
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn_tophat_2)
     np.save(
@@ -498,6 +538,7 @@ for nudge_factor in nudge_factor_list:
         answer_no_sn_tophat_2,
     )
     """
+
     answer_no_sn_zero_inflated = minimize(
         likelihood_zero_inflated_voronoi,
         dtd_bin_and_theta,
@@ -507,8 +548,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list[sn_mask])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn_zero_inflated)
     answer_no_sn_zero_inflated_tophat_1 = minimize(
@@ -520,8 +561,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_1[sn_mask_tophat_1])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn_zero_inflated_tophat_1)
     answer_no_sn_zero_inflated_tophat_2 = minimize(
@@ -533,8 +574,8 @@ for nudge_factor in nudge_factor_list:
             np.zeros_like(sn_list_tophat_2[sn_mask_tophat_2])[np.newaxis].T,
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sn_zero_inflated_tophat_2)
     np.save(
@@ -573,8 +614,8 @@ for nudge_factor in nudge_factor_list:
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_no_sfh_lt_1e8)
     np.save(
@@ -601,8 +642,8 @@ for nudge_factor in nudge_factor_list:
             sn_list[sn_mask],
         ),
         method="Powell",
-        tol=1e-20,
-        options={"maxiter": 100000, "xtol": 1e-20, "ftol": 1e-20},
+        tol=1e-10,
+        options={"maxiter": 100000, "xtol": 1e-10, "ftol": 1e-10},
     )
     print(answer_1percent_sfh_lt_1e8)
     np.save(
@@ -622,16 +663,20 @@ for nudge_factor in nudge_factor_list:
     sum_m_psi_tophat_2 = np.sum(
         sfh_voronoi * 10.0**answer_tophat_2.x, axis=0
     )
+    """
 
     sum_m_psi_zero_inflated = np.sum(
-        sfh_voronoi * 10.0 ** answer_zero_inflated.x[:len(dtd_bin)], axis=0
+        sfh_voronoi * 10.0 ** answer_zero_inflated.x[: len(dtd_bin)], axis=0
     )
     sum_m_psi_zero_inflated_tophat_1 = np.sum(
-        sfh_voronoi * 10.0 ** answer_zero_inflated_tophat_1.x[:len(dtd_bin)], axis=0
+        sfh_voronoi * 10.0 ** answer_zero_inflated_tophat_1.x[: len(dtd_bin)],
+        axis=0,
     )
     sum_m_psi_zero_inflated_tophat_2 = np.sum(
-        sfh_voronoi * 10.0 ** answer_zero_inflated_tophat_2.x[:len(dtd_bin)], axis=0
+        sfh_voronoi * 10.0 ** answer_zero_inflated_tophat_2.x[: len(dtd_bin)],
+        axis=0,
     )
+    """
 
     dtd_err = (
         np.sum(sn_list) * sum_m_psi / np.sum(sum_m_psi)
@@ -647,23 +692,23 @@ for nudge_factor in nudge_factor_list:
         / np.sum(sum_m_psi_tophat_2)
     ) ** -0.5 * 10.0**answer_tophat_2.x
 
+    """
     dtd_err_zero_inflated = (
         np.sum(sn_list)
         * sum_m_psi_zero_inflated
         / np.sum(sum_m_psi_zero_inflated)
-    ) ** -0.5 * 10.0 ** answer_zero_inflated.x[:len(dtd_bin)]
+    ) ** -0.5 * 10.0 ** answer_zero_inflated.x[: len(dtd_bin)]
     dtd_err_zero_inflated_tophat_1 = (
         np.sum(sn_list_tophat_1)
         * sum_m_psi_zero_inflated_tophat_1
         / np.sum(sum_m_psi_zero_inflated_tophat_1)
-    ) ** -0.5 * 10.0 ** answer_zero_inflated_tophat_1.x[:len(dtd_bin)]
+    ) ** -0.5 * 10.0 ** answer_zero_inflated_tophat_1.x[: len(dtd_bin)]
     dtd_err_zero_inflated_tophat_2 = (
         np.sum(sn_list_tophat_2)
         * sum_m_psi_zero_inflated_tophat_2
         / np.sum(sum_m_psi_zero_inflated_tophat_2)
-    ) ** -0.5 * 10.0 ** answer_zero_inflated_tophat_2.x[:len(dtd_bin)]
+    ) ** -0.5 * 10.0 ** answer_zero_inflated_tophat_2.x[: len(dtd_bin)]
 
-    """
     # compute the curvature matrix (alpha) here
     alpha = np.zeros((len(input_age), len(input_age)))
     for i, sfh_i in enumerate(sfh_voronoi_with_sn):
@@ -690,25 +735,27 @@ for nudge_factor in nudge_factor_list:
         label="poisson",
         fmt=".",
     )
+    """
     plt.errorbar(
         input_age,
-        10.0 ** answer_zero_inflated.x[:len(dtd_bin)],
+        10.0 ** answer_zero_inflated.x[: len(dtd_bin)],
         yerr=dtd_err_zero_inflated,
         label="zero inflated poisson",
         fmt=".",
     )
+    """
     _y = 10.0**answer_no_sn.x
-    #_y_zero_inflated = 10.0**answer_no_sn_zero_inflated.x[:len(dtd_bin)]
+    # _y_zero_inflated = 10.0**answer_no_sn_zero_inflated.x[:len(dtd_bin)]
     _y[_y < 1e-29] = 1e-29
-    #_y_zero_inflated[_y_zero_inflated < 1e-29] = 1e-29
+    # _y_zero_inflated[_y_zero_inflated < 1e-29] = 1e-29
     plt.scatter(input_age, _y, label="All SN removed", marker="v", color="C2")
-    #plt.scatter(
+    # plt.scatter(
     #    input_age,
     #    _y_zero_inflated,
     #    label="All SN removed (zero inflated)",
     #    marker="v",
     #    color="C3",
-    #)
+    # )
     # plt.scatter(input_age, 10.0**answer_no_sfh_lt_1e8.x, label="SFH(t <= 10E8) removed", marker="o", color="C3")
     # plt.scatter(input_age, 10.0**answer_1percent_sfh_lt_1e8.x, label="SFH(t <= 10E8) x 0.01", marker="o", color="C4")
 
@@ -745,28 +792,30 @@ for nudge_factor in nudge_factor_list:
         label="poisson",
         fmt=".",
     )
+    """
     plt.errorbar(
         input_age,
-        10.0 ** answer_zero_inflated_tophat_1.x[:len(dtd_bin)],
+        10.0 ** answer_zero_inflated_tophat_1.x[: len(dtd_bin)],
         yerr=dtd_err_zero_inflated_tophat_1,
         label="zero inflated poisson",
         fmt=".",
     )
+    """
 
     _y_tophat_1 = 10.0**answer_no_sn_tophat_1.x
-    #_y_zero_inflated_tophat_1 = 10.0**answer_no_sn_zero_inflated_tophat_1.x[:-1]
+    # _y_zero_inflated_tophat_1 = 10.0**answer_no_sn_zero_inflated_tophat_1.x[:-1]
     _y_tophat_1[_y_tophat_1 < 1e-29] = 1e-29
-    #_y_zero_inflated_tophat_1[_y_zero_inflated_tophat_1 < 1e-29] = 1e-29
+    # _y_zero_inflated_tophat_1[_y_zero_inflated_tophat_1 < 1e-29] = 1e-29
     plt.scatter(
         input_age, _y_tophat_1, label="All SN removed", marker="v", color="C2"
     )
-    #plt.scatter(
+    # plt.scatter(
     #    input_age,
     #    _y_zero_inflated_tophat_1,
     #    label="All SN removed (zero inflated)",
     #    marker="v",
     #    color="C3",
-    #)
+    # )
     # plt.scatter(input_age, 10.0**answer_no_sfh_lt_1e8.x, label="SFH(t <= 10E8) removed", marker="o", color="C3")
     # plt.scatter(input_age, 10.0**answer_1percent_sfh_lt_1e8.x, label="SFH(t <= 10E8) x 0.01", marker="o", color="C4")
 
@@ -803,28 +852,30 @@ for nudge_factor in nudge_factor_list:
         label="poisson",
         fmt=".",
     )
+    """
     plt.errorbar(
         input_age,
-        10.0 ** answer_zero_inflated_tophat_2.x[:len(dtd_bin)],
+        10.0 ** answer_zero_inflated_tophat_2.x[: len(dtd_bin)],
         yerr=dtd_err_zero_inflated_tophat_2,
         label="zero inflated poisson",
         fmt=".",
     )
+    """
 
     _y_tophat_2 = 10.0**answer_no_sn_tophat_2.x
-    #_y_zero_inflated_tophat_2 = 10.0**answer_no_sn_zero_inflated_tophat_2.x[:len(dtd_bin)]
+    # _y_zero_inflated_tophat_2 = 10.0**answer_no_sn_zero_inflated_tophat_2.x[:len(dtd_bin)]
     _y_tophat_2[_y_tophat_2 < 1e-29] = 1e-29
-    #_y_zero_inflated_tophat_2[_y_zero_inflated_tophat_2 < 1e-29] = 1e-29
+    # _y_zero_inflated_tophat_2[_y_zero_inflated_tophat_2 < 1e-29] = 1e-29
     plt.scatter(
         input_age, _y_tophat_2, label="All SN removed", marker="v", color="C2"
     )
-    #plt.scatter(
+    # plt.scatter(
     #    input_age,
     #    _y_zero_inflated_tophat_2,
     #    label="All SN removed (zero inflated)",
     #    marker="v",
     #    color="C3",
-    #)
+    # )
     # plt.scatter(input_age, 10.0**answer_no_sfh_lt_1e8.x, label="SFH(t <= 10E8) removed", marker="o", color="C3")
     # plt.scatter(input_age, 10.0**answer_1percent_sfh_lt_1e8.x, label="SFH(t <= 10E8) x 0.01", marker="o", color="C4")
 
@@ -859,7 +910,7 @@ for nudge_factor in nudge_factor_list:
 
     plt.xscale("log")
     plt.yscale("log")
-    """
+
 
     plt.figure(3, figsize=(8, 8))
     plt.clf()
@@ -885,7 +936,7 @@ for nudge_factor in nudge_factor_list:
     plt.grid()
     plt.savefig(f"sfh_with_sn_{int(nudge_factor)}.png")
 
-    """
+
     decades_val = np.array([1e7, 1e8, 1e9, 1e10])
     decades_arg = np.where(np.in1d(input_age, decades_val))[0]
 

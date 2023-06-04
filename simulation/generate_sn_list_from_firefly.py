@@ -41,12 +41,11 @@ def get_dtd(gap, gradient, normalisation=1.0):
     dtd = np.ones_like(t)
     mask = t > gap
     dtd[mask] = (t[mask] * 1e-9) ** gradient
-    dtd[~mask] *= 1e-100
+    dtd[~mask] = min(dtd[mask]) * 0.1
     dtd /= max(dtd)
     dtd *= normalisation
     dtd_itp = itp.interp1d(t, dtd, kind="linear", fill_value="extrapolate")
     return dtd_itp
-
 
 
 def get_tophat_dtd(start, end, normalisation=1.0):
@@ -66,12 +65,11 @@ def get_tophat_dtd(start, end, normalisation=1.0):
         The default is 1.0.
     """
     t = 10.0 ** np.linspace(1.0, 11.0, 10001)
-    dtd = np.ones_like(t) * 1e-100
+    dtd = np.ones_like(t) * normalisation * 0.01
     mask = (t > start) & (t < end)
     dtd[mask] = normalisation
     dtd_itp = itp.interp1d(t, dtd, kind="linear", fill_value="extrapolate")
     return dtd_itp
-
 
 
 def sn_rate(tau, dtd, sfr):
@@ -93,10 +91,10 @@ def sn_rate(tau, dtd, sfr):
 
 # 140e-14 SNe / Msun / yr at 0.21 Gyr
 # no SN in the first 50 Myr
-gap = 100e6
-beta = -2.0
+gap = 50e6
+beta = -1.0
 
-nudge_factor_list = [1.0, 10.0, 100.0, 1000.0]
+nudge_factor_list = [1.0, 10.0, 100.0]
 
 # Get the SFH from the firefly data
 data_firefly = fits.open("../firefly/manga-firefly-v3_1_1-miles.fits.gz")
@@ -143,20 +141,11 @@ for nudge_factor in nudge_factor_list:
             sfh_voronoi_i = sfh[arg][:, 2] * mass_voronoi_i
             age_voronoi_i = 10.0 ** sfh[arg][:, 0] * 1e9
             # Toggle this to remove the youngest stellar populations
-            sfh_voronoi_i[age_voronoi_i < 50e6] = 0.0
+            #sfh_voronoi_i[age_voronoi_i < 50e6] = 0.0
             # Eq. 2 & 3
-            lamb = (
-                np.nansum(dtd_itp(age_voronoi_i) * sfh_voronoi_i)
-                * detection_window
-            )
-            lamb_tophat_1 = (
-                np.nansum(dtd_tophat_itp_1(age_voronoi_i) * sfh_voronoi_i)
-                * detection_window
-            )
-            lamb_tophat_2 = (
-                np.nansum(dtd_tophat_itp_2(age_voronoi_i) * sfh_voronoi_i)
-                * detection_window
-            )
+            lamb = dtd_itp(age_voronoi_i) @ sfh_voronoi_i * detection_window
+            lamb_tophat_1 = dtd_tophat_itp_1(age_voronoi_i) @ sfh_voronoi_i * detection_window
+            lamb_tophat_2 = dtd_tophat_itp_2(age_voronoi_i) @ sfh_voronoi_i * detection_window
             # Eq. 4
             # Get the Possion probability of NOT observing an SN in that voronois
             # within the detection window
