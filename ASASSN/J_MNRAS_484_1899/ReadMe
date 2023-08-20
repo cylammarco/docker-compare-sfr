@@ -1,0 +1,251 @@
+J/MNRAS/484/1899  The ASAS-SN bright supernova catalogue - IV   (Holoien+, 2019)
+================================================================================
+The ASAS-SN bright supernova catalogue - IV. 2017
+     Holoien T.W-S., Brown J.S., Vallely P.J., Stanek K.Z., Kochanek C.S.,
+     Shappee B.J., Prieto J.L., Dong S., Brimacombe J., Bishop D.W., Bose S.,
+     Beacom J.F, Bersier D., Chen P., Chomiuk L., Falco E., Holmbo S.,
+     Jayasinghe T., Morrell N., Pojmanski G., Shields J.V., Strader J.,
+     Stritzinger M.D., Thompson T.A, Wozniak P.R., Bock G., Cacella P.,
+     Carballo J.G., Cruz I., Conseil E., Farfan R.G., Fernandez J.M., Kiyota S.,
+     Koff R.A., Krannich G., Marples P., Masi G., Monard L.A.G., Munoz J.A.,
+     Nicholls B., Post R.S, Stone G., Trappett D.L, Wiethoff W.S.
+    <Mon. Not. R. Astron. Soc., 484, 1899-1911 (2019)>
+    =2019MNRAS.484.1899H    (SIMBAD/NED BibCode)
+================================================================================
+ADC_Keywords: Supernovae ; Surveys ; Galaxies, nearby
+Keywords: catalogues - surveys - supernovae: general
+
+Abstract:
+    In this catalogue we compile information for all supernovae discovered
+    by the All-Sky Automated Survey for SuperNovae (ASAS-SN) as well as
+    all other bright (m_peak_=<17), spectroscopically confirmed supernovae
+    found in 2017, totalling 308 supernovae. We also present UV through
+    near-IR magnitudes gathered from public databases of all host galaxies
+    for the supernovae in the sample. We perform statistical analyses of
+    our full bright supernova sample, which now contains 949 supernovae
+    discovered since 2014 May 1, including supernovae from our previous
+    catalogues. This is the fourth of a series of yearly papers on bright
+    supernovae and their hosts from the ASAS-SN team, and this work
+    presents updated data and measurements, including light curves,
+    redshifts, classifications, and host galaxy identifications, that
+    supersede information contained in any previous publications.
+
+Description:
+    All information for SNe discovered by ASAS-SN between 2017 January 1
+    and 2017 December 31 is given in Table 1. We measured all ASAS-SN SN
+    redshifts from classification spectra. For cases where the nominal SN
+    host galaxy had a previously measured redshift that is consistent with
+    the transient redshift, we list the redshift of the host taken from
+    the NASA/IPAC Extragalactic Database (NED)
+    (https://ned.ipac.caltech.edu/). For other cases, we report the
+    redshifts given in the classification telegrams or posted on TNS
+    (Transient Name Server), with the exception of those that are updated
+    in this work.
+    Table 2 contains information for all SNe discovered by other
+    professional and amateur SN searches between 2017 January 1 and 2017
+    December 31 that are both spectroscopically confirmed and have peak
+    magnitudes of m_peak_=<17. As in our previous catalogues, the list of
+    non-ASAS-SN discoveries was gathered from the 'latest supernovae'
+    website created by D. W. Bishop (Gal-Yam et al. 2013PASP..125..749G).
+    This website compiles discoveries reported via a multitude of
+    channels, including TNS and ATels, and links objects reported by
+    different searches at different times. It is thus an ideal source for
+    information on discoveries from various SN searches.
+    For both the ASAS-SN and non-ASAS-SN samples, we collected Galactic
+    extinction estimates in the directions of the host galaxies and
+    near-ultraviolet (NUV) through infrared (IR) host galaxy magnitudes,
+    which we present in Tables 3 and 4. We obtained the values of Galactic
+    A_V_ from Schlafly & Finkbeiner (2011ApJ...737..103S) in the
+    directions of the SNe from NED. NUV host magnitudes from the Galaxy
+    Evolution Explorer (GALEX; Morrissey et al. 2007ApJS..173..682M) All
+    Sky Imaging Survey (AIS), optical ugriz magnitudes from the Sloan
+    Digital Sky Survey Data Release 14 (SDSS DR14; SDSS Collaboration et
+    al. 2018ApJS..235...42A), NIR JHKS magnitudes from the Two-Micron All
+    Sky Survey (2MASS; Skrutskie et al. 2006AJ....131.1163S, Cat.
+    VII/233), and IR W1 and W2 from the Wide-field Infrared Survey
+    Explorer (WISE; Wright et al. 2010AJ....140.1868W) AllWISE source
+    catalogues were obtained from publicly available online databases.
+
+File Summary:
+--------------------------------------------------------------------------------
+ FileName      Lrecl  Records   Explanations
+--------------------------------------------------------------------------------
+ReadMe            80        .   This file
+table1.dat       199      166   ASAS-SN SNe
+table2.dat       220      142   Non-ASAS-SN SNe
+table3.dat       200      166   ASAS-SN supernova host galaxies
+table4.dat       270      142   Non-ASAS-SN supernova host galaxies
+--------------------------------------------------------------------------------
+
+Byte-by-byte Description of file: table1.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units   Label     Explanations
+--------------------------------------------------------------------------------
+   1- 11  A11   ---     Name      Supernova name (ASASSN-YYaa)
+  13- 19  A7    ---     OName     IAU supernova name (YYYYaaa)
+  21- 33  A13   "Y:M:D" Date      Discovery date
+  35- 36  I2    h       RAh       Right ascension (J2000)
+  38- 39  I2    min     RAm       Right ascension (J2000)
+  41- 45  F5.2  s       RAs       Right ascension (J2000)
+      47  A1    ---     DE-       Declination sign (J2000)
+  48- 49  I2    deg     DEd       Declination (J2000)
+  51- 52  I2    arcmin  DEm       Declination (J2000)
+  54- 58  F5.2  arcsec  DEs       Declination (J2000)
+  60- 66  F7.5  ---     z         Redshift
+  68- 71  F4.1  mag     mdiscmag  Discovery magnitude (1)
+  73- 76  F4.1  mag     Vpeakmag  ? Peak V-band magnitude from ASAS-SN data
+  78- 81  F4.1  mag     gpeakmag  ? Peak g-band magnitude from ASAS-SN data
+  83- 87  F5.2  arcsec  Offset    Offset of the supernova from the coordinates
+                                   of the host nucleus, taken from NED
+  89- 95  A7    ---     Type      Supernova type
+  97- 99  I3    d       Agedisc   ? Supernova discovery age, given in days
+                                   relative to peak (2)
+ 101-130  A30   ---     Host      Name of the host galaxy
+ 132-164  A33   ---     DiscAtel  Discovery telegram
+ 166-199  A34   ---     ClassAtel Classification telegram (3)
+--------------------------------------------------------------------------------
+Note (1): Discovery magnitudes are V- or g-band magnitudes from ASAS-SN,
+          depending on the camera used for discovery
+Note (2): All ages are approximate and are only listed if a clear age was given
+          in the classification telegram
+Note (3): TNS is for the Transient Name Server (https://wis-tns.weizmann.ac.il/)
+--------------------------------------------------------------------------------
+
+Byte-by-byte Description of file: table2.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units   Label     Explanations
+--------------------------------------------------------------------------------
+   1- 29  A29   ---     Name      Supernova name
+  31- 37  A7    ---     OName     IAU supernova name (YYYYaaa)
+  39- 51  A13   "Y:M:D" Date      Discovery date
+  53- 54  I2    h       RAh       Right ascension (J2000)
+  56- 57  I2    min     RAm       Right ascension (J2000)
+  59- 63  F5.2  s       RAs       Right ascension (J2000)
+      65  A1    ---     DE-       Declination sign (J2000)
+  66- 67  I2    deg     DEd       Declination (J2000)
+  69- 70  I2    arcmin  DEm       Declination (J2000)
+  72- 76  F5.2  arcsec  DEs       Declination (J2000)
+  78- 85  F8.6  ---     z         Redshift
+  87- 90  F4.1  mag     mpeakmag  Magnitude taken from D.W. Bishop's Bright
+                                   Supernova website (1)
+  92- 95  F4.1  mag     Vpeakmag  ? Peak V-band magnitude from ASAS-SN data
+  97-100  F4.1  mag     gpeakmag  ? Peak g-band magnitude from ASAS-SN data
+ 102-107  F6.2  arcsec  Offset    Offset of the supernova from the coordinates
+                                   of the host nucleus, taken from NED
+ 109-115  A7    ---     Type      Supernova type
+ 117-144  A28   ---     Host      Name of the host galaxy
+ 146-216  A71   ---     Discovery Supernova discoverer (2)
+ 218-220  A3    ---     Recovered Indicates whether the SN was independently
+                                   recovered in ASAS-SN data or not
+--------------------------------------------------------------------------------
+Note (1): The magnitudes taken from D.W. Bishop's Bright Supernova website may
+          be from different filters
+Note (2): 'Amateurs' indicates discovery by any number of non-professional
+          astronomers
+--------------------------------------------------------------------------------
+
+Byte-by-byte Description of file: table3.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units     Label     Explanations
+--------------------------------------------------------------------------------
+   1- 30  A30   ---       Host      Host galaxy name
+  32- 38  F7.5  ---       z         ? Redshift
+  40- 50  A11   ---       Name      Supernova Name (ASASSN-YYaa)
+  52- 57  A6    ---       Type      Supernova type
+  59- 63  F5.2  arcsec    Offset    Offset of the supernova from the coordinates
+                                     of the host nucleus, taken from NED
+  65- 69  F5.3  mag       AV        Galactic extinction taken from
+                                     Schlafly & Finkbeiner (2011ApJ...737..103S)
+  71- 75  F5.2  mag       NUVmag    ? GALEX NUV magnitude (G1)
+  77- 80  F4.2  mag     e_NUVmag    ? Error on NUVmag (G1)
+  82- 86  F5.2  mag       umag      ? SDSS u-band magnitude (G2)
+  88- 91  F4.2  mag     e_umag      ? Error on umag (G2)
+  93- 97  F5.2  mag       gmag      ? SDSS g-band magnitude (G2)
+  99-102  F4.2  mag     e_gmag      ? Error on gmag (G2)
+ 104-108  F5.2  mag       rmag      ? SDSS r-band magnitude (G2)
+ 110-113  F4.2  mag     e_rmag      ? Error on rmag (G2)
+ 115-119  F5.2  mag       imag      ? SDSS i-band magnitude (G2)
+ 121-124  F4.2  mag     e_imag      ? Error on imag (G2)
+ 126-130  F5.2  mag       zmag      ? SDSS z-band magnitude (G2)
+ 132-135  F4.2  mag     e_zmag      ? Error on zmag (G2)
+     137  A1    ---     l_Jmag      Limit flag on Jmag (G3)
+ 139-143  F5.2  mag       Jmag      ? 2MASS J-band magnitude (G3)
+ 145-148  F4.2  mag     e_Jmag      ? Error on Jmag
+     150  A1    ---     l_Hmag      Limit flag on Hmag (G3)
+ 152-156  F5.2  mag       Hmag      ? 2MASS H-band magnitude (G3)
+ 158-162  F5.2  mag     e_Hmag      ? Error on Hmag
+     164  A1    ---     l_Ksmag     Limit flag on Ksmag (G3)
+ 166-170  F5.2  mag       Ksmag     ? 2MASS Ks-band magnitude (G3)
+ 172-176  F5.2  mag     e_Ksmag     ? Error on Ksmag
+     178  A1    ---     f_Ksmag     [*] Flag on Ksmag (G4)
+ 180-184  F5.2  mag       W1mag     ? WISE W1 (3.4um) band magnitude
+ 186-189  F4.2  mag     e_W1mag     ? Error on W1mag
+ 191-195  F5.2  mag       W2mag     ? WISE W2 (4.6um) band magnitude
+ 197-200  F4.2  mag     e_W2mag     ? Error on W2mag
+--------------------------------------------------------------------------------
+
+Byte-by-byte Description of file: table4.dat
+--------------------------------------------------------------------------------
+   Bytes Format Units     Label     Explanations
+--------------------------------------------------------------------------------
+   1- 28  A28   ---       Host      Host galaxy name
+  30- 37  F8.6  ---       z         ? Redshift
+  39- 67  A29   ---       Name      Supernova Name
+  69- 75  A7    ---       Type      Supernova type
+  77- 82  F6.2  arcsec    Offset    ? Offset of the supernova from the
+                                     coordinates of the host nucleus, taken
+                                     from NED
+  84- 88  F5.3  mag       AV        Galactic extinction taken from
+                                     Schlafly & Finkbeiner (2011ApJ...737..103S)
+  90- 94  F5.2  mag       NUVmag    ? GALEX NUV magnitude (G1)
+  96- 99  F4.2  mag     e_NUVmag    ? Error on NUVmag (G1)
+ 101-108  F8.5  mag       umag      ? SDSS u-band magnitude (G2)
+ 110-121  F12.9 mag     e_umag      ? Error on umag (G2)
+ 123-130  F8.5  mag       gmag      ? SDSS g-band magnitude (G2)
+ 132-142  F11.9 mag     e_gmag      ? Error on gmag (G2)
+ 144-151  F8.5  mag       rmag      ? SDSS r-band magnitude (G2)
+ 153-163  F11.9 mag     e_rmag      ? Error on rmag (G2)
+ 165-172  F8.5  mag       imag      ? SDSS i-band magnitude (G2)
+ 174-184  F11.9 mag     e_imag      ? Error on imag (G2)
+ 186-193  F8.5  mag       zmag      ? SDSS z-band magnitude (G2)
+ 195-205  F11.9 mag     e_zmag      ? Error on zmag (G2)
+     207  A1    ---     l_Jmag      Limit flag on Jmag (G3)
+ 209-213  F5.2  mag       Jmag      2MASS J-band magnitude (G3)
+ 215-219  F5.2  mag     e_Jmag      ? Error on Jmag
+     221  A1    ---     l_Hmag      Limit flag on Hmag (G3)
+ 223-227  F5.2  mag       Hmag      2MASS H-band magnitude (G3)
+ 229-233  F5.2  mag     e_Hmag      ? Error on Hmag
+     235  A1    ---     l_Ksmag     Limit flag on Ksmag (G3)
+ 237-241  F5.2  mag       Ksmag     2MASS Ks-band magnitude (G3)
+ 243-246  F4.2  mag     e_Ksmag     ? Error on Ksmag
+     248  A1    ---     f_Ksmag     [*] Flag on Ksmag (G4)
+ 250-254  F5.2  mag       W1mag     ? WISE W1 (3.4um) band magnitude
+ 256-259  F4.2  mag     e_W1mag     ? Error on W1mag
+ 261-265  F5.2  mag       W2mag     ? WISE W2 (4.6um) band magnitude
+ 267-270  F4.2  mag     e_W2mag     ? Error on W2mag
+--------------------------------------------------------------------------------
+
+Global notes:
+Note (G1): No magnitude is listed for those galaxies not detected in GALEX
+           survey data
+Note (G2): No magnitude is listed for those galaxies not detected in SDSS data
+           or those located outside of the SDSS footprint
+Note (G3): For those galaxies not detected in 2MASS data, we assume an upper
+           limit of the faintest galaxy detected in each band from our sample
+Note (G4): Flag as follows:
+    * = Ks-band magnitudes estimated from the WISE W1-band, adding the mean
+        Ks-W1 offset from the total sample to the WISE W1 magnitude. This
+        average offset is equal to -0.51mag with a scatter of 0.04mag and a
+        standard error of 0.002mag
+--------------------------------------------------------------------------------
+
+History:
+    From electronic version of the journal
+
+References:
+    Holoien et al.,    Paper I      2017MNRAS.464.2672H, Cat. J/MNRAS/464/2672
+    Holoien et al.,    Paper II     2017MNRAS.467.1098H, Cat. J/MNRAS/467/1098
+    Holoien et al.,    Paper III    2017MNRAS.471.4966H, Cat. J/MNRAS/471/4966
+
+================================================================================
+(End)                                           Ana Fiallos [CDS]    16-Aug-2022
