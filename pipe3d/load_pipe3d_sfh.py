@@ -14,7 +14,7 @@ else:
 pipe3d_folder_path = r"../../../manga/data.sdss.org/sas/dr17/spectro/pipe3d/v3_1_1/3.1.1/*/"
 
 # test locally use this
-#pipe3d_folder_path = r"8078"
+pipe3d_folder_path = r"8078"
 
 folder_list = np.sort(glob.glob(pipe3d_folder_path))
 
@@ -118,3 +118,17 @@ else:
     np.save("sfh_pipe3d_voronoi_binned.npy", sfh_voronoi)
 
     sfh_voronoi_binned = sfh_voronoi
+
+
+
+CRPIX1  =              38.0000 /Reference pixel (1-indexed)
+CRPIX2  =              38.0000 /Reference pixel (1-indexed)
+CRVAL1  =        40.8804660000 /
+CRVAL2  =       0.306821500000 /
+CD1_1   =         -0.000138889 /
+CD2_2   =          0.000138889 /
+CTYPE1  = 'RA---TAN'           /
+CTYPE2  = 'DEC--TAN'           /
+CUNIT1  = 'deg     '           /
+CUNIT2  = 'deg     '           /
+

@@ -10,34 +10,7 @@ from scipy import interpolate as itp
 from scipy.integrate import quad
 from scipy import special
 
-
-def get_dtd(gap, gradient, normalisation=1.0):
-    """
-    Return an interpolated function of a delay time distribution
-    function based on the input delay time and gradient. The returned
-    function takes t which is the lockback time in yr, in the unit of
-    SN per year per solar mass
-    Parameters
-    ----------
-    gap : array_like
-        The time during which no SN is formed, in yr.
-    gradient : array_like
-        The power-law gradient of the delay time distribution.
-    normalisation : float, optional
-        The normalisation (at the gap time) of the delay time distribution.
-        The default is 1.0.
-    """
-    if gradient > 0:
-        raise ValueError("Gradient must be negative.")
-    t = 10.0 ** np.linspace(1.0, 11.0, 10001)
-    dtd = np.ones_like(t) * -18
-    mask = t > gap
-    dtd[mask] = (t[mask] * 1e-9) ** gradient
-    dtd /= max(dtd)
-    dtd *= normalisation
-    dtd_itp = itp.interp1d(t, dtd, kind="linear", fill_value="extrapolate")
-    return dtd_itp
-
+from dtd_functions import get_dtd, get_tophat_dtd
 
 def likelihood_spexel(
     dtd_guess,

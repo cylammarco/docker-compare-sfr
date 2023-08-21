@@ -8,6 +8,7 @@ import numpy as np
 from scipy import interpolate as itp
 from scipy import integrate as itg
 
+from dtd_functions import get_dtd, get_tophat_dtd
 
 cosmo = cosmology.FlatLambdaCDM(
     H0=70 * units.km / units.s / units.Mpc,
@@ -16,34 +17,6 @@ cosmo = cosmology.FlatLambdaCDM(
 )
 age_universe = cosmo.age(0).to_value() * 1e9
 log_age_universe = np.log10(age_universe)
-
-
-def get_dtd(gap, gradient, normalisation=1.0):
-    """
-    Return an interpolated function of a delay time distribution
-    function based on the input delay time and gradient. The returned
-    function takes t which is the lockback time in yr.
-    Parameters
-    ----------
-    gap : array_like
-        The time during which no SN is formed, in yr.
-    gradient : array_like
-        The power-law gradient of the delay time distribution.
-    normalisation : float, optional
-        The normalisation (at the gap time) of the delay time distribution.
-        The default is 1.0.
-    """
-    if gradient > 0:
-        raise ValueError("Gradient must be negative.")
-    t = 10.0 ** np.linspace(1.0, 11.0, 10001)
-    dtd = np.zeros_like(t)
-    mask = t > gap
-    dtd[mask] = (t[mask] * 1e-9) ** gradient
-    dtd /= max(dtd)
-    dtd *= normalisation
-    dtd[dtd<1e-80] = 1e-300
-    dtd_itp = itp.interp1d(t, dtd, kind='linear', fill_value="extrapolate")
-    return dtd_itp
 
 
 def sn_rate(tau, dtd, sfr):
