@@ -20,11 +20,11 @@ manga_sn_dec = manga_sn[:, 5].astype("float")
 
 
 pipe3d_folder_path = (
-    r"../../../manga/data.sdss.org/sas/dr17/spectro/pipe3d/v3_1_1/3.1.1/*/"
+    r"../../manga/data.sdss.org/sas/dr17/spectro/pipe3d/v3_1_1/3.1.1/*/"
 )
 
 # test locally use this
-# pipe3d_folder_path = r"8078"
+# pipe3d_folder_path = r"pipe3d/8078"
 
 folder_list = np.sort(glob.glob(pipe3d_folder_path))
 
@@ -80,15 +80,19 @@ for folder_path in folder_list:
             ra_last = ra_1 + delta_ra * n_pix_x
             dec_last = dec_1 + delta_dec * n_pix_y
 
-            distance = (spexel_ra - manga_sn_ra[idx]) ** 2.0 + (
-                spexel_dec - manga_sn_dec[idx]
+            #
+            ra_list = np.linspace(ra_1, ra_last + delta_ra, n_pix_x)
+            dec_list = np.linspace(dec_1, dec_last + delta_dec, n_pix_y)
+
+            distance = (ra_list - manga_sn_ra[idx]) ** 2.0 + (
+                dec_list - manga_sn_dec[idx]
             ) ** 2.0
             vor_sn_id = np.argmin(distance)
         else:
             vor_sn_id = None
         voronoi_id = data[1].data[1]
-        voronoi_id_flattened = np.sort(voronoi_id.flatten()).astype("int")
-        voronoi_id_list = np.unique(voronoi_id_flattened)
+        voronoi_id_flattened = voronoi_id.flatten().astype("int")
+        voronoi_id_list = np.sort(np.unique(voronoi_id_flattened))
         for voronoi_id in voronoi_id_list:
             if vor_sn_id == voronoi_id:
                 sn_list.append(1)
